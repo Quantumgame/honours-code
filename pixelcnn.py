@@ -69,7 +69,7 @@ class PixelCNN:
     def apply_conditioning(self, doubled):
         doubler = 2 if doubled else 1
         if self.conditioning == 'none':
-            return tf.tile([[[[0.0]]]], [self.batch_size, self.height, self.width, self.features * doubler])
+            return tf.zeros([self.batch_size, self.height, self.width, self.features * doubler])
         elif self.conditioning == 'local':
             W = tf.Variable(tf.truncated_normal([1, 1, self.labels, self.features * doubler], stddev=0.1))
             b = tf.Variable(tf.constant(0.1, shape=[self.features * doubler]))
@@ -102,9 +102,6 @@ class PixelCNN:
         out = self.fully_connected(out, True)
         print(out.shape)
         return out
-
-    def binarize(images):
-        return (np.random.uniform(size=images.shape) < images).astype(np.float32)
         
     def logitise(self, images):
         return tf.one_hot(tf.to_int32(images * (self.values-1)), self.values)
@@ -121,10 +118,9 @@ class PixelCNN:
 
         images = samples.reshape((self.batch_size, 1, self.height, self.width))
         images = images.transpose(1, 2, 0, 3)
-        images = images.reshape((self.height * self.batch_size, 28 * 1))
+        images = images.reshape((self.height * 1, self.width * self.batch_size))
 
         filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M')+".jpg"
-        
         Image.fromarray(images.astype(np.int8)*255, mode='L').convert(mode='RGB').save(filename)
         
     def run(self):
@@ -172,4 +168,4 @@ class PixelCNN:
         probabilities = X_out / self.temperature
         self.predictions = tf.reshape(tf.multinomial(tf.reshape(probabilities, shape=[self.batch_size*self.height*self.width*self.channels, self.values]), 1), shape=[self.batch_size,self.height,self.width,self.channels])
         print(self.predictions.shape)
-        
+

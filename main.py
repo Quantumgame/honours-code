@@ -30,7 +30,5 @@ if __name__ == "__main__":
     data = Dataset(mnist.train(), mnist.test(), 2, 10, conf.batch_size) if conf.dataset == 'mnist' else Dataset(imagenet.train(), imagenet.test(), 256, 1000, conf.batch_size)
     #pixelcnn = PixelCNN(conf, data)
     #pixelcnn.run()
-    #simultaneous = Simultaneous(conf, data)
-    
-    #pixelcnn_main(conf, data)
-    #simultaneous_main(conf, data)
+    simultaneous = Simultaneous(conf, data)
+    simultaneous.run()
