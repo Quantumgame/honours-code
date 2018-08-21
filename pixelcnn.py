@@ -109,7 +109,7 @@ class PixelCNN:
     def generate_samples(self, sess):
         print("Generating Sample Images...")
         samples = np.zeros((self.batch_size, self.height, self.width, self.channels), dtype=np.float32)
-        conditions = [0]*self.batch_size
+        conditions = [i // self.batch_size for i in range(self.batch_size)]
 
         for i in range(self.height):
             for j in range(self.width):
@@ -120,7 +120,7 @@ class PixelCNN:
         images = images.transpose(1, 2, 0, 3)
         images = images.reshape((self.height * 1, self.width * self.batch_size))
 
-        filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M')+".jpg"
+        filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M')+".png"
         Image.fromarray(images.astype(np.int8)*255, mode='L').convert(mode='RGB').save(filename)
         
     def run_tests(self):
@@ -170,8 +170,7 @@ class PixelCNN:
         
     def run(self):
         #saver = tf.train.Saver(tf.trainable_variables())
-        iterator = self.data.train.make_one_shot_iterator()
-        X_tf, y_tf = iterator.get_next()        
+        X_in_tf, X_tf, y_tf = self.data.get_values()    
 
         with tf.Session() as sess: 
             sess.run(tf.global_variables_initializer())
@@ -208,7 +207,7 @@ class PixelCNN:
         self.y = tf.one_hot(self.y, self.labels)
         X_out = self.pixelcnn() # softmax has not been applied here, shape is [batch, height, width, channels, values]
         self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=X_out, labels=self.logitise(self.X)))
-        self.train_step = tf.train.RMSPropOptimizer(1e-4).minimize(self.loss)
+        self.train_step = tf.train.RMSPropOptimizer(1e-4).minimize(self.loss) # "RMSprop with a learning rate schedule starting at 1e-4 and decaying to 1e-5, trained for 200k steps with batch size of 128"
         print(X_out.shape)
         probabilities = X_out / self.temperature
         self.predictions = tf.reshape(tf.multinomial(tf.reshape(probabilities, shape=[self.batch_size*self.height*self.width*self.channels, self.values]), 1), shape=[self.batch_size,self.height,self.width,self.channels])

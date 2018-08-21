@@ -47,7 +47,7 @@ def dataset(directory, images_file, labels_file):
       images_file, 28 * 28, header_bytes=16).map(decode_image)
   labels = tf.data.FixedLengthRecordDataset(
       labels_file, 1, header_bytes=8).map(decode_label)
-  return tf.data.Dataset.zip((images, labels))
+  return images, labels
 
 
 def train():

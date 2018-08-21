@@ -99,7 +99,7 @@ class Simultaneous:
         return out, (W, b), None
         
     def simultaneous(self):
-        X = self.X
+        X = self.X_in
         weights = []
         recurrences = []
         print(X.shape)
@@ -133,22 +133,23 @@ class Simultaneous:
         
     def generate_samples(self, sess):
         print("Generating Sample Images...")
-        samples = np.zeros((self.batch_size, self.height, self.width, self.channels), dtype=np.float32)
-        conditions = [0]*self.batch_size
+        X_in, X_true, y = sess.run(self.data.get_test_values())
 
-        predictions = sess.run(self.predictions, feed_dict={self.X:samples, self.y_raw:conditions})
-
-        images = predictions.reshape((self.batch_size, 1, self.height, self.width))
+        predictions = sess.run(self.predictions, feed_dict={self.X_in:X_in, self.y_raw:y})
+        
+        X_in = X_in.reshape((self.batch_size, 1, self.height, self.width))
+        predictions = predictions.reshape((self.batch_size, 1, self.height, self.width))
+        X_true = X_true.reshape((self.batch_size, 1, self.height, self.width))
+        images = np.concatenate((X_in, predictions, X_true), axis=1)
         images = images.transpose(1, 2, 0, 3)
-        images = images.reshape((self.height * 1, self.width * self.batch_size))
+        images = images.reshape((self.height * 3, self.width * self.batch_size))
 
-        filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M')+".jpg"
-        Image.fromarray(images.astype(np.int8)*255, mode='L').convert(mode='RGB').save(filename)
+        filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M')+".png"
+        Image.fromarray((images*255).astype(np.int32)).convert('RGB').save(filename)
 
     def run(self):
         #saver = tf.train.Saver(tf.trainable_variables())
-        iterator = self.data.train.make_one_shot_iterator()
-        X_tf, y_tf = iterator.get_next()        
+        X_in_tf, X_tf, y_tf = self.data.get_values()       
 
         with tf.Session() as sess: 
             sess.run(tf.global_variables_initializer())
@@ -157,8 +158,8 @@ class Simultaneous:
             #    print("Model Restored")
             print("Started Model Training...")
             for i in range(self.batches):
-              X, y = sess.run([X_tf, y_tf])
-              _, loss = sess.run([self.train_step,self.loss], feed_dict={self.X:X, self.y_raw:y})
+              X_in, X_true, y = sess.run([X_in_tf, X_tf, y_tf])
+              _, loss = sess.run([self.train_step,self.loss], feed_dict={self.X_in:X_in, self.X_true:X_true, self.y_raw:y})
               if i%10 == 0:
                 #saver.save(sess, conf.ckpt_file)
                 print("batch %d, loss %g"%(i, loss))
@@ -166,7 +167,6 @@ class Simultaneous:
             
     def run_tests(self):
         print('No tests available')
-        pass
 
     def __init__(self, conf, data):
         self.batch_size = conf.batch_size
@@ -187,12 +187,13 @@ class Simultaneous:
         self.batches = conf.batches
 
         
-        self.X = tf.placeholder(tf.float32, [self.batch_size,self.height,self.width,self.channels])
+        self.X_in = tf.placeholder(tf.float32, [self.batch_size,self.height,self.width,self.channels])
+        self.X_true = tf.placeholder(tf.float32, [self.batch_size,self.height,self.width,self.channels])
         self.y_raw = tf.placeholder(tf.int32, [self.batch_size])
         self.y = tf.reshape(self.y_raw, shape=[self.batch_size, 1, 1])
         self.y = tf.one_hot(self.y, self.labels)
         X_out, X_single = self.simultaneous()
-        self.loss = tf.nn.l2_loss((X_out if self.train_type == 'full' else X_single) - self.X)
+        self.loss = tf.nn.l2_loss((X_out if self.train_type == 'full' else X_single) - self.X_true)
         self.train_step = tf.train.RMSPropOptimizer(1e-4).minimize(self.loss)
         print(X_out.shape)
         self.predictions = tf.to_float(tf.less(tf.random_uniform([self.batch_size,self.height,self.width,self.channels]), X_out))
