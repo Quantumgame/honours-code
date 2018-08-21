@@ -7,9 +7,12 @@ import data.imagenet as imagenet
 from data.dataset import Dataset
 from pixelcnn import PixelCNN
 from simultaneous import Simultaneous
+  
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument('--test', action='store_true')
+    parser.add_argument('--model', type=str, choices=['pixelcnn', 'simultaneous'], default='simultaneous')
     parser.add_argument('--layers', type=int, default=10)
     parser.add_argument('--features', type=int, default=128)
     parser.add_argument('--filter_size', type=int, default=5)
@@ -25,10 +28,13 @@ if __name__ == "__main__":
     #parser.add_argument('--ckpt_path', type=str, default='ckpts')
     #parser.add_argument('--summary_path', type=str, default='logs')
     conf = parser.parse_args()
+    
     # for quick test use python .\main.py --layers 3 --features 5 --batches 101 --batch_size 6 --conditioning none
     
     data = Dataset(mnist.train(), mnist.test(), 2, 10, conf.batch_size) if conf.dataset == 'mnist' else Dataset(imagenet.train(), imagenet.test(), 256, 1000, conf.batch_size)
-    #pixelcnn = PixelCNN(conf, data)
-    #pixelcnn.run()
-    simultaneous = Simultaneous(conf, data)
-    simultaneous.run()
+    model = PixelCNN(conf, data) if conf.model == 'pixelcnn' else Simultaneous(conf, data)
+    
+    if conf.test:
+        model.run_tests()
+    else:
+        model.run()

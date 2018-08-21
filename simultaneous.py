@@ -163,6 +163,10 @@ class Simultaneous:
                 #saver.save(sess, conf.ckpt_file)
                 print("batch %d, loss %g"%(i, loss))
             self.generate_samples(sess)
+            
+    def run_tests(self):
+        print('No tests available')
+        pass
 
     def __init__(self, conf, data):
         self.batch_size = conf.batch_size

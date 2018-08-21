@@ -123,6 +123,51 @@ class PixelCNN:
         filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M')+".jpg"
         Image.fromarray(images.astype(np.int8)*255, mode='L').convert(mode='RGB').save(filename)
         
+    def run_tests(self):
+        self.causality_test()
+        
+    def causality_test(self):
+        import matplotlib.pyplot as plt
+        print('PixelCNN causality test:')
+        if self.batch_size > 1:
+            print('Recommend using --batch_size 1 for interpretable results')
+        if (self.filter_size // 2) * self.layers < max(self.height, self.width):
+            print('Filter size and/or number of layers too low to capture whole image in receptive field. Not running test.')
+            return
+        data_length = self.height * self.width * self.channels
+        data_length = int(np.ceil(data_length / self.batch_size) * self.batch_size)
+        data = np.zeros((data_length, self.height, self.width, self.channels))
+        answer = np.zeros((data_length, self.height, self.width, self.channels))
+        conditions = [0]*self.batch_size
+        for y in range(self.height):
+            for x in range(self.width):
+                for c in range(self.channels):
+                    data[y*self.width * self.channels + x*self.channels + c,y,x,c] = np.nan
+                    for yy in range(y, self.height):
+                        for xx in range(self.width):
+                            for cc in range(self.channels):
+                                if yy > y or xx > x:
+                                    answer[y*self.width * self.channels + x*self.channels + c,yy,xx,cc] = np.nan
+        
+        with tf.Session() as sess: 
+            sess.run(tf.global_variables_initializer())
+            for batch in range(data_length//self.batch_size):
+                X = data[batch:batch+self.batch_size,:,:,:]
+                y = answer[batch:batch+self.batch_size,:,:,:]
+                predictions = sess.run(self.predictions, feed_dict={self.X:X, self.y_raw:conditions})
+                # weirdly tf.multinomial outputs n+1 if one of the inputs is nan:
+                if np.all((predictions==self.values) == np.isnan(y)):
+                    print('Success')
+                else:
+                    print('Fail')
+                    plt.close()
+                    plt.subplot(121)
+                    plt.imshow((predictions == self.values)[0,:,:,0])
+                    plt.subplot(122)
+                    plt.imshow(np.isnan(y)[0,:,:,0])
+                    plt.show()
+        
+        
     def run(self):
         #saver = tf.train.Saver(tf.trainable_variables())
         iterator = self.data.train.make_one_shot_iterator()
