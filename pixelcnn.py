@@ -108,17 +108,17 @@ class PixelCNN:
         
     def generate_samples(self, sess):
         print("Generating Sample Images...")
-        samples = np.zeros((self.batch_size, self.height, self.width, self.channels), dtype=np.float32)
-        conditions = [i // self.batch_size for i in range(self.batch_size)]
+        samples = np.zeros((100, self.height, self.width, self.channels), dtype=np.float32)
+        conditions = [i // 10 for i in range(100)]
 
         for i in range(self.height):
             for j in range(self.width):
                 predictions = sess.run(self.predictions, feed_dict={self.X:samples, self.y_raw:conditions})
                 samples[:, i, j, :] = predictions[:, i, j, :]
 
-        images = samples.reshape((self.batch_size, 1, self.height, self.width))
+        images = samples.reshape((100, 1, self.height, self.width))
         images = images.transpose(1, 2, 0, 3)
-        images = images.reshape((self.height * 1, self.width * self.batch_size))
+        images = images.reshape((self.height * 10, self.width * 10))
 
         filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M')+".png"
         Image.fromarray(images.astype(np.int8)*255, mode='L').convert(mode='RGB').save(filename)
@@ -129,16 +129,15 @@ class PixelCNN:
     def causality_test(self):
         import matplotlib.pyplot as plt
         print('PixelCNN causality test:')
-        if self.batch_size > 1:
-            print('Recommend using --batch_size 1 for interpretable results')
+        batch_size = 1
         if (self.filter_size // 2) * self.layers < max(self.height, self.width):
             print('Filter size and/or number of layers too low to capture whole image in receptive field. Not running test.')
             return
         data_length = self.height * self.width * self.channels
-        data_length = int(np.ceil(data_length / self.batch_size) * self.batch_size)
+        data_length = int(np.ceil(data_length / batch_size) * batch_size)
         data = np.zeros((data_length, self.height, self.width, self.channels))
         answer = np.zeros((data_length, self.height, self.width, self.channels))
-        conditions = [0]*self.batch_size
+        conditions = [0]*(batch_size)
         for y in range(self.height):
             for x in range(self.width):
                 for c in range(self.channels):
@@ -151,9 +150,9 @@ class PixelCNN:
         
         with tf.Session() as sess: 
             sess.run(tf.global_variables_initializer())
-            for batch in range(data_length//self.batch_size):
-                X = data[batch:batch+self.batch_size,:,:,:]
-                y = answer[batch:batch+self.batch_size,:,:,:]
+            for batch in range(data_length//batch_size):
+                X = data[batch:batch+batch_size,:,:,:]
+                y = answer[batch:batch+batch_size,:,:,:]
                 predictions = sess.run(self.predictions, feed_dict={self.X:X, self.y_raw:conditions})
                 # weirdly tf.multinomial outputs n+1 if one of the inputs is nan:
                 if np.all((predictions==self.values) == np.isnan(y)):
@@ -169,25 +168,39 @@ class PixelCNN:
         
         
     def run(self):
-        #saver = tf.train.Saver(tf.trainable_variables())
-        X_in_tf, X_tf, y_tf = self.data.get_values()    
+        saver = tf.train.Saver()
+        X_in_tf, X_tf, y_tf = self.data.get_values()
+        X_test_in_tf, X_test_tf, y_test_tf = self.data.get_test_values()
+        
+        summary_writer = tf.summary.FileWriter('logs/pixelcnn')
 
         with tf.Session() as sess: 
-            sess.run(tf.global_variables_initializer())
-            #if os.path.exists(conf.ckpt_file):
-            #    saver.restore(sess, conf.ckpt_file)
-            #    print("Model Restored")
+            if self.restore:
+                ckpt = tf.train.get_checkpoint_state('ckpts')
+                saver.restore(sess, ckpt.model_checkpoint_path)
+            else:
+                sess.run(tf.global_variables_initializer())
+            global_step = sess.run(self.global_step)
             print("Started Model Training...")
-            for i in range(self.batches):
+            while global_step < self.batches:
+              print('running', global_step, self.batches)
               X, y = sess.run([X_tf, y_tf])
-              _, loss = sess.run([self.train_step,self.loss], feed_dict={self.X:X, self.y_raw:y})
-              if i%10 == 0:
-                #saver.save(sess, conf.ckpt_file)
-                print("batch %d, loss %g"%(i, loss))
-            self.generate_samples(sess)
+              summary, _ = sess.run([self.summaries, self.train_step], feed_dict={self.X:X, self.y_raw:y})
+              summary_writer.add_summary(summary, global_step)
+              
+              if global_step%1000 == 0 or global_step == (self.batches - 1):
+                saver.save(sess, 'ckpts/pixelcnn.ckpt', global_step=global_step)
+                X, y = sess.run([X_test_tf, y_test_tf])
+                summary, test_loss = sess.run([self.summaries, self.loss], feed_dict={self.X:X, self.y_raw:y})
+                summary_writer.add_summary(summary, global_step)
+                print("batch %d, test loss %g"%(global_step, test_loss))
+              global_step = sess.run(self.global_step)
+                
+            saver.save(sess, 'ckpts/pixelcnn.ckpt')
+            
+            #self.generate_samples(sess)
             
     def __init__(self, conf, data):
-        self.batch_size = conf.batch_size
         self.channels = data.channels
         self.height = data.height
         self.width = data.width
@@ -200,16 +213,24 @@ class PixelCNN:
         self.conditioning = conf.conditioning
         self.temperature = conf.temperature
         self.batches = conf.batches
+        self.learning_rate = conf.learning_rate
+        self.restore = conf.restore
         
-        self.X = tf.placeholder(tf.float32, [self.batch_size,self.height,self.width,self.channels])
-        self.y_raw = tf.placeholder(tf.int32, [self.batch_size])
-        self.y = tf.reshape(self.y_raw, shape=[self.batch_size, 1, 1])
+        self.global_step = tf.Variable(0, trainable=False)
+        
+        self.X = tf.placeholder(tf.float32, [None,self.height,self.width,self.channels])
+        self.batch_size = tf.shape(self.X)[0]
+        self.y_raw = tf.placeholder(tf.int32, [None])
+        self.y = tf.reshape(self.y_raw, shape=[self.batch_size, 1, 1]) # If this throws an error at runtime, y_raw was fed with the wrong batch size. Can't seem to find a way to constrain the size at feed time.
         self.y = tf.one_hot(self.y, self.labels)
         X_out = self.pixelcnn() # softmax has not been applied here, shape is [batch, height, width, channels, values]
         self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=X_out, labels=self.logitise(self.X)))
-        self.train_step = tf.train.RMSPropOptimizer(1e-4).minimize(self.loss) # "RMSprop with a learning rate schedule starting at 1e-4 and decaying to 1e-5, trained for 200k steps with batch size of 128"
+        tf.summary.scalar('loss', self.loss)
+        self.train_step = tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.loss, global_step=self.global_step)
         print(X_out.shape)
         probabilities = X_out / self.temperature
         self.predictions = tf.reshape(tf.multinomial(tf.reshape(probabilities, shape=[self.batch_size*self.height*self.width*self.channels, self.values]), 1), shape=[self.batch_size,self.height,self.width,self.channels])
         print(self.predictions.shape)
+        
+        self.summaries = tf.summary.merge_all()
 

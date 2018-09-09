@@ -72,11 +72,13 @@ class Dataset:
             test_images, test_labels = mnist.test()
             self.values = 2
             self.labels = 10
+            self.test_size = 10000
         else:
             images, labels = imagenet.train()
             test_images, test_labels = imagenet.test()
             self.values = 256
             self.labels = 1000
+            self.test_size = -1 # TODO
             
         input_shape = images.output_shapes
         assert len(input_shape) == 3
@@ -101,8 +103,10 @@ class Dataset:
         data = tf.data.Dataset.zip(tuple(datas)).flat_map(lambda *ds: concat_datasets(ds))
         self.data = data.repeat().batch(conf.batch_size)
         
-        self.test_data = tf.data.Dataset.zip((test_images, test_labels)).flat_map(lambda image, label: make_test_data(image, label, conf, self.height, self.width))
-        self.test_data = self.test_data.batch(conf.batch_size)
+        #self.test_data = tf.data.Dataset.zip((test_images, test_labels)).flat_map(lambda image, label: make_test_data(image, label, conf, self.height, self.width))
+        # TODO: implement all dataset transformations properly
+        self.test_data = tf.data.Dataset.zip((test_images, test_images, test_labels))
+        self.test_data = self.test_data.batch(int(self.test_size)).repeat()
         
         
     def get_values(self):

@@ -29,31 +29,9 @@ class Simultaneous:
         else:
             assert False
             
-        return result, (W, b)
+        return result, (W, b)        
         
-    def apply_recurrence(self, weights=None, recurrences=None):
-        if self.recurrence == 'end':
-            return tf.zeros([self.batch_size, self.height, self.width, self.features]), None
-            
-        if weights is None:
-            W = tf.Variable(tf.truncated_normal([self.filter_size, self.filter_size, self.features, 2*self.features], stddev=0.1))
-            b = tf.Variable(tf.constant(0.1, shape=[2*self.features]))
-            W2 = tf.Variable(tf.truncated_normal([1, 1, self.features, self.features], stddev=0.1))
-            b2 = tf.Variable(tf.constant(0.1, shape=[self.features]))
-        else:
-            W, b, W2, b2 = weights
-            
-        if recurrences is None:
-            recurrences = tf.zeros([self.batch_size, self.height, self.width, self.features])
-
-        result = tf.nn.conv2d(recurrences, W, strides=[1, 1, 1, 1], padding='SAME') + b
-        result = self.gate(result[:,:,:,:self.features], result[:,:,:,self.features:])
-        result = tf.nn.conv2d(result, W2, strides=[1, 1, 1, 1], padding='VALID') + b2
-        
-        return result, (W, b, W2, b2)
-        
-        
-    def start(self, input, weights=None, recurrences=None):
+    def start(self, input, weights=None):
         if weights is None:
             W = tf.Variable(tf.truncated_normal([1, 1, self.channels, 2*self.features], stddev=0.1))
             b = tf.Variable(tf.constant(0.1, shape=[2*self.features]))
@@ -65,28 +43,26 @@ class Simultaneous:
         out = tf.nn.conv2d(input, W, strides=[1, 1, 1, 1], padding='VALID') + b + condition
         out = self.gate(out[:,:,:,:self.features], out[:,:,:,self.features:])
         
-        return out, (W, b, cond_weights), None
+        return out, (W, b, cond_weights)
         
-    def layer(self, input, weights=None, recurrences=None):
+    def layer(self, input, weights=None):
         if weights is None:
             W = tf.Variable(tf.truncated_normal([self.filter_size, self.filter_size, self.features, 2*self.features], stddev=0.1))
             b = tf.Variable(tf.constant(0.1, shape=[2*self.features]))
             W2 = tf.Variable(tf.truncated_normal([1, 1, self.features, self.features], stddev=0.1))
             b2 = tf.Variable(tf.constant(0.1, shape=[self.features]))
             condition, cond_weights = self.apply_conditioning()
-            recurrence, rec_weights = self.apply_recurrence()
         else:
-            W, b, W2, b2, cond_weights, rec_weights = weights
+            W, b, W2, b2, cond_weights = weights
             condition, _ = self.apply_conditioning(cond_weights)
-            recurrence, _ = self.apply_recurrence(rec_weights, recurrences)
 
-        conv = tf.nn.conv2d(input + recurrence, W, strides=[1, 1, 1, 1], padding='SAME') + b + condition
+        conv = tf.nn.conv2d(input, W, strides=[1, 1, 1, 1], padding='SAME') + b + condition
         out = self.gate(conv[:,:,:,:self.features], conv[:,:,:,self.features:])
         residual = tf.nn.conv2d(out, W2, strides=[1, 1, 1, 1], padding='VALID') + b2
         
-        return input + residual, (W, b, W2, b2, cond_weights, rec_weights), out
+        return input + residual, (W, b, W2, b2, cond_weights)
         
-    def end(self, input, weights=None, recurrences=None):
+    def end(self, input, weights=None):
         if weights is None:
             W = tf.Variable(tf.truncated_normal([1, 1, self.features, 2*self.channels], stddev=0.1))
             b = tf.Variable(tf.constant(0.1, shape=[2*self.channels]))
@@ -96,38 +72,34 @@ class Simultaneous:
         out = tf.nn.conv2d(input, W, strides=[1, 1, 1, 1], padding='VALID') + b
         out = self.gate(out[:,:,:,:self.channels], out[:,:,:,self.channels:])
         
-        return out, (W, b), None
+        return out, (W, b)
         
     def simultaneous(self):
         X = self.X_in
         weights = []
-        recurrences = []
         print(X.shape)
-        X, W, R = self.start(X)
+        X, W = self.start(X)
         weights.append(W)
-        recurrences.append(R)
         for i in range(self.layers):
             print(X.shape)
-            X, W, R = self.layer(X)
+            X, W = self.layer(X)
             weights.append(W)
-            recurrences.append(R)
             
         print(X.shape)
-        X, W, R = self.end(X)
+        X, W = self.end(X)
         weights.append(W)
-        recurrences.append(R)
         print(X.shape)
         X_single = X
         
         for iteration in range(self.iterations - 1):
             print(X.shape)
-            X, _, recurrences[0] = self.start(X, weights[0], recurrences[0])
+            X, _ = self.start(X, weights[0])
             for i in range(self.layers):
                 print(X.shape)
-                X, _, recurrences[i+1] = self.layer(X, weights[i+1], recurrences[i+1])
+                X, _ = self.layer(X, weights[i+1])
                 
             print(X.shape)
-            X, _, recurrences[-1] = self.end(X, weights[-1], recurrences[-1])
+            X, _ = self.end(X, weights[-1])
             print(X.shape)
         return X, X_single
         
@@ -179,12 +151,12 @@ class Simultaneous:
         self.filter_size = conf.filter_size
         self.features = conf.features
         self.layers = conf.layers
-        self.recurrence = conf.recurrence
         self.iterations = conf.iterations
         self.train_type = conf.train_type
         self.conditioning = conf.conditioning
         self.temperature = conf.temperature
         self.batches = conf.batches
+        self.learning_rate = conf.learning_rate
 
         
         self.X_in = tf.placeholder(tf.float32, [self.batch_size,self.height,self.width,self.channels])
@@ -194,7 +166,7 @@ class Simultaneous:
         self.y = tf.one_hot(self.y, self.labels)
         X_out, X_single = self.simultaneous()
         self.loss = tf.nn.l2_loss((X_out if self.train_type == 'full' else X_single) - self.X_true)
-        self.train_step = tf.train.RMSPropOptimizer(1e-4).minimize(self.loss)
+        self.train_step = tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.loss)
         print(X_out.shape)
         self.predictions = tf.to_float(tf.less(tf.random_uniform([self.batch_size,self.height,self.width,self.channels]), X_out))
 
