@@ -4,6 +4,12 @@ import numpy as np
 from datetime import datetime
 from PIL import Image
 
+def get_weights(shape):
+    return tf.Variable(tf.contrib.layers.xavier_initializer()(shape))
+
+def get_bias_weights(shape):
+    return tf.Variable(tf.zeros_initializer()(shape))
+
 class Simultaneous:
     def gate(self, p1, p2):
         return tf.multiply(tf.tanh(p1), tf.sigmoid(p2))
@@ -14,11 +20,11 @@ class Simultaneous:
             
         if weights is None:
             if self.conditioning == 'local':
-                W = tf.Variable(tf.truncated_normal([1, 1, self.labels, 2*self.features], stddev=0.1))
-                b = tf.Variable(tf.constant(0.1, shape=[2*self.features]))
+                W = get_weights([1, 1, self.labels, 2*self.features])
+                b = get_bias_weights([2*self.features])
             elif self.conditioning == 'global':
-                W = tf.Variable(tf.truncated_normal([1, 1, self.labels, self.height * self.width * 2*self.features], stddev=0.1))
-                b = tf.Variable(tf.constant(0.1, shape=[self.height * self.width * 2*self.features]))
+                W = get_weights([1, 1, self.labels, self.height * self.width * 2*self.features])
+                b = get_bias_weights([self.height * self.width * 2*self.features])
         else:
             W, b = weights
             
@@ -33,8 +39,8 @@ class Simultaneous:
         
     def start(self, input, weights=None):
         if weights is None:
-            W = tf.Variable(tf.truncated_normal([1, 1, self.channels, 2*self.features], stddev=0.1))
-            b = tf.Variable(tf.constant(0.1, shape=[2*self.features]))
+            W = get_weights([1, 1, self.channels, 2*self.features])
+            b = get_bias_weights([2*self.features])
             condition, cond_weights = self.apply_conditioning()
         else:
             W, b, cond_weights = weights
@@ -47,10 +53,10 @@ class Simultaneous:
         
     def layer(self, input, weights=None):
         if weights is None:
-            W = tf.Variable(tf.truncated_normal([self.filter_size, self.filter_size, self.features, 2*self.features], stddev=0.1))
-            b = tf.Variable(tf.constant(0.1, shape=[2*self.features]))
-            W2 = tf.Variable(tf.truncated_normal([1, 1, self.features, self.features], stddev=0.1))
-            b2 = tf.Variable(tf.constant(0.1, shape=[self.features]))
+            W = get_weights([self.filter_size, self.filter_size, self.features, 2*self.features])
+            b = get_bias_weights([2*self.features])
+            W2 = get_weights([1, 1, self.features, self.features])
+            b2 = get_bias_weights([self.features])
             condition, cond_weights = self.apply_conditioning()
         else:
             W, b, W2, b2, cond_weights = weights
@@ -64,8 +70,8 @@ class Simultaneous:
         
     def end(self, input, weights=None):
         if weights is None:
-            W = tf.Variable(tf.truncated_normal([1, 1, self.features, 2*self.channels], stddev=0.1))
-            b = tf.Variable(tf.constant(0.1, shape=[2*self.channels]))
+            W = get_weights([1, 1, self.features, 2*self.channels])
+            b = get_bias_weights([2*self.channels])
         else:
             W, b = weights
 

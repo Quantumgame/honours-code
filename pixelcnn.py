@@ -4,6 +4,12 @@ import numpy as np
 from datetime import datetime
 from PIL import Image
 
+def get_weights(shape):
+    return tf.Variable(tf.contrib.layers.xavier_initializer()(shape))
+
+def get_bias_weights(shape):
+    return tf.Variable(tf.zeros_initializer()(shape))
+
 class PixelCNN:
     def gate(self, p1, p2):
         return tf.multiply(tf.tanh(p1), tf.sigmoid(p2))
@@ -14,8 +20,8 @@ class PixelCNN:
         n = self.filter_size
         v_in = tf.pad(v_in, [[0,0],[n-1,0],[n//2, n//2],[0,0]])
         
-        W = tf.Variable(tf.truncated_normal([n, n, self.channels if first else self.features, 2*self.features], stddev=0.1))
-        b = tf.Variable(tf.constant(0.1, shape=[2*self.features]))
+        W = get_weights([n, n, self.channels if first else self.features, 2*self.features])
+        b = get_bias_weights([2*self.features])
         v_conv = tf.nn.conv2d(v_in, W, strides=[1, 1, 1, 1], padding='VALID') + b
         return v_conv
         
@@ -31,12 +37,12 @@ class PixelCNN:
             h_in = h_in[:,:,:-1,:]
             n = n-1
             
-        W = tf.Variable(tf.truncated_normal([1, n, self.channels if first else self.features, 2*self.features], stddev=0.1))
-        b = tf.Variable(tf.constant(0.1, shape=[2*self.features]))
+        W = get_weights([1, n, self.channels if first else self.features, 2*self.features])
+        b = get_bias_weights([2*self.features])
         h_conv = tf.nn.conv2d(h_in, W, strides=[1, 1, 1, 1], padding='VALID') + b
         
-        W2 = tf.Variable(tf.truncated_normal([1, 1, 2*self.features, 2*self.features], stddev=0.1))
-        b2 = tf.Variable(tf.constant(0.1, shape=[2*self.features]))
+        W2 = get_weights([1, 1, 2*self.features, 2*self.features])
+        b2 = get_bias_weights([2*self.features])
         v_conv = tf.nn.conv2d(v_conv, W2, strides=[1, 1, 1, 1], padding='VALID') + b2
         
         h_conv += v_conv
@@ -59,8 +65,8 @@ class PixelCNN:
         return v_out, h_out, skip
 
     def fully_connected(self, input, final):
-        W = tf.Variable(tf.truncated_normal([1, 1, self.features, self.channels * self.values if final else self.features], stddev=0.1))
-        b = tf.Variable(tf.constant(0.1, shape=[self.channels * self.values if final else self.features]))
+        W = get_weights([1, 1, self.features, self.channels * self.values if final else self.features])
+        b = get_bias_weights([self.channels * self.values if final else self.features])
         out = tf.nn.conv2d(input, W, strides=[1, 1, 1, 1], padding='VALID') + b
         if final:
             out = tf.reshape(out, shape=[self.batch_size, self.height, self.width, self.channels, self.values])
@@ -71,12 +77,12 @@ class PixelCNN:
         if self.conditioning == 'none':
             return tf.zeros([self.batch_size, self.height, self.width, self.features * doubler])
         elif self.conditioning == 'local':
-            W = tf.Variable(tf.truncated_normal([1, 1, self.labels, self.features * doubler], stddev=0.1))
-            b = tf.Variable(tf.constant(0.1, shape=[self.features * doubler]))
+            W = get_weights([1, 1, self.labels, self.features * doubler])
+            b = get_bias_weights([self.features * doubler])
             return tf.tile(tf.reshape(tf.nn.conv2d(self.y, W, strides=[1, 1, 1, 1], padding='VALID') + b, shape=[self.batch_size, 1, 1, self.features * doubler]), [1, self.height, self.width, 1])
         elif self.conditioning == 'global':
-            W = tf.Variable(tf.truncated_normal([1, 1, self.labels, self.height * self.width * self.features * doubler], stddev=0.1))
-            b = tf.Variable(tf.constant(0.1, shape=[self.height * self.width * self.features * doubler]))
+            W = get_weights([1, 1, self.labels, self.height * self.width * self.features * doubler])
+            b = get_bias_weights([self.height * self.width * self.features * doubler])
             return tf.reshape(tf.nn.conv2d(self.y, W, strides=[1, 1, 1, 1], padding='VALID') + b, shape=[self.batch_size, self.height, self.width, self.features * doubler])
         else:
             assert False
