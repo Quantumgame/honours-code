@@ -64,9 +64,7 @@ def make_test_data(image, label, conf, height, width):
     
 
 class Dataset:
-    def __init__(self, conf):
-        assert conf.plain_images or conf.denoising or conf.deblurring or conf.upsampling
-        
+    def __init__(self, conf):        
         if conf.dataset == 'mnist':
             images, labels = mnist.train()
             test_images, test_labels = mnist.test()
@@ -83,11 +81,19 @@ class Dataset:
         input_shape = images.output_shapes
         assert len(input_shape) == 3
         self.height, self.width, self.channels = input_shape.as_list()
+        
+        self.plain_data = tf.data.Dataset.zip((images, labels))
+        self.plain_data = self.plain_data.repeat().batch(conf.batch_size)
+        
+        self.plain_test_data = tf.data.Dataset.zip((test_images, test_labels))
+        self.plain_test_data = self.test_data.batch(int(self.test_size)).repeat()
             
         plain = tf.data.Dataset.zip((images, images, labels))
         noisy = tf.data.Dataset.zip((get_noisy(images, conf.noise_prop), images, labels))
         blurry = tf.data.Dataset.zip((get_blurry(images, conf.blur_sigma), images, labels))
         downsampled = tf.data.Dataset.zip((get_downsampled(images, conf.upsample_factor, self.height, self.width), images, labels))
+        
+        #assert conf.plain_images or conf.denoising or conf.deblurring or conf.upsampling
         
         datas = []
         if conf.plain_images:
@@ -100,18 +106,25 @@ class Dataset:
             datas.append(downsampled)
         
         # Interleave datasets, see: https://stackoverflow.com/questions/47343228/interleaving-tf-data-datasets
-        data = tf.data.Dataset.zip(tuple(datas)).flat_map(lambda *ds: concat_datasets(ds))
-        self.data = data.repeat().batch(conf.batch_size)
+        self.data = tf.data.Dataset.zip(tuple(datas)).flat_map(lambda *ds: concat_datasets(ds))
+        self.data = self.data.repeat().batch(conf.batch_size)
         
-        #self.test_data = tf.data.Dataset.zip((test_images, test_labels)).flat_map(lambda image, label: make_test_data(image, label, conf, self.height, self.width))
-        # TODO: implement all dataset transformations properly
-        self.test_data = tf.data.Dataset.zip((test_images, test_images, test_labels))
-        self.test_data = self.test_data.batch(int(self.test_size)).repeat()
+        self.test_data = tf.data.Dataset.zip((test_images, test_labels)).flat_map(lambda image, label: make_test_data(image, label, conf, self.height, self.width))
+        self.test_data = self.test_data.batch(int(self.test_size) * len(datas)).repeat()
         
         
     def get_values(self):
         # Returns (input, output, label) tuples
         return self.data.make_one_shot_iterator().get_next()
         
+    def get_plain_values(self):
+        # Returns (input, label) tuples
+        return self.plain_data.make_one_shot_iterator().get_next()
+        
     def get_test_values(self):
+        # Returns (input, output, label) tuples
         return self.test_data.make_one_shot_iterator().get_next()
+        
+    def get_plain_test_values(self):
+        # Returns (input, label) tuples
+        return self.plain_test_data.make_one_shot_iterator().get_next()

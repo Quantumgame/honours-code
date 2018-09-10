@@ -76,11 +76,11 @@ class PixelCNN:
         doubler = 2 if doubled else 1
         if self.conditioning == 'none':
             return tf.zeros([self.batch_size, self.height, self.width, self.features * doubler])
-        elif self.conditioning == 'local':
+        elif self.conditioning == 'generic':
             W = get_weights([1, 1, self.labels, self.features * doubler])
             b = get_bias_weights([self.features * doubler])
             return tf.tile(tf.reshape(tf.nn.conv2d(self.y, W, strides=[1, 1, 1, 1], padding='VALID') + b, shape=[self.batch_size, 1, 1, self.features * doubler]), [1, self.height, self.width, 1])
-        elif self.conditioning == 'global':
+        elif self.conditioning == 'localised':
             W = get_weights([1, 1, self.labels, self.height * self.width * self.features * doubler])
             b = get_bias_weights([self.height * self.width * self.features * doubler])
             return tf.reshape(tf.nn.conv2d(self.y, W, strides=[1, 1, 1, 1], padding='VALID') + b, shape=[self.batch_size, self.height, self.width, self.features * doubler])
@@ -175,8 +175,8 @@ class PixelCNN:
         
     def run(self):
         saver = tf.train.Saver()
-        X_in_tf, X_tf, y_tf = self.data.get_values()
-        X_test_in_tf, X_test_tf, y_test_tf = self.data.get_test_values()
+        X_tf, y_tf = self.data.get_plain_values()
+        X_test_tf, y_test_tf = self.data.get_plain_test_values()
         
         summary_writer = tf.summary.FileWriter('logs/pixelcnn')
 
@@ -188,13 +188,13 @@ class PixelCNN:
                 sess.run(tf.global_variables_initializer())
             global_step = sess.run(self.global_step)
             print("Started Model Training...")
-            while global_step < self.batches:
-              print('running', global_step, self.batches)
+            while global_step < self.epochs:
+              print('running', global_step, self.epochs)
               X, y = sess.run([X_tf, y_tf])
               summary, _ = sess.run([self.summaries, self.train_step], feed_dict={self.X:X, self.y_raw:y})
               summary_writer.add_summary(summary, global_step)
               
-              if global_step%1000 == 0 or global_step == (self.batches - 1):
+              if global_step%1000 == 0 or global_step == (self.epochs - 1):
                 saver.save(sess, 'ckpts/pixelcnn.ckpt', global_step=global_step)
                 X, y = sess.run([X_test_tf, y_test_tf])
                 summary, test_loss = sess.run([self.summaries, self.loss], feed_dict={self.X:X, self.y_raw:y})
@@ -218,7 +218,7 @@ class PixelCNN:
         self.layers = conf.layers
         self.conditioning = conf.conditioning
         self.temperature = conf.temperature
-        self.batches = conf.batches
+        self.epochs = conf.epochs
         self.learning_rate = conf.learning_rate
         self.restore = conf.restore
         

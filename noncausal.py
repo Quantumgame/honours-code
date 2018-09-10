@@ -10,7 +10,7 @@ def get_weights(shape):
 def get_bias_weights(shape):
     return tf.Variable(tf.zeros_initializer()(shape))
 
-class Simultaneous:
+class NonCausal:
     def gate(self, p1, p2):
         return tf.multiply(tf.tanh(p1), tf.sigmoid(p2))
         
@@ -19,18 +19,18 @@ class Simultaneous:
             return tf.zeros([self.batch_size, self.height, self.width, 2*self.features]), None
             
         if weights is None:
-            if self.conditioning == 'local':
+            if self.conditioning == 'generic':
                 W = get_weights([1, 1, self.labels, 2*self.features])
                 b = get_bias_weights([2*self.features])
-            elif self.conditioning == 'global':
+            elif self.conditioning == 'localised':
                 W = get_weights([1, 1, self.labels, self.height * self.width * 2*self.features])
                 b = get_bias_weights([self.height * self.width * 2*self.features])
         else:
             W, b = weights
             
-        if self.conditioning == 'local':
+        if self.conditioning == 'generic':
             result = tf.tile(tf.reshape(tf.nn.conv2d(self.y, W, strides=[1, 1, 1, 1], padding='VALID') + b, shape=[self.batch_size, 1, 1, 2*self.features]), [1, self.height, self.width, 1])
-        elif self.conditioning == 'global':
+        elif self.conditioning == 'localised':
             result = tf.reshape(tf.nn.conv2d(self.y, W, strides=[1, 1, 1, 1], padding='VALID') + b, shape=[self.batch_size, self.height, self.width, 2*self.features])
         else:
             assert False
@@ -80,7 +80,7 @@ class Simultaneous:
         
         return out, (W, b)
         
-    def simultaneous(self):
+    def noncausal(self):
         X = self.X_in
         weights = []
         print(X.shape)
@@ -97,7 +97,7 @@ class Simultaneous:
         print(X.shape)
         X_single = X
         
-        for iteration in range(self.iterations - 1):
+        for iteration in range(self.iterations - 1): ## TODO remove 'iterations'
             print(X.shape)
             X, _ = self.start(X, weights[0])
             for i in range(self.layers):
@@ -135,7 +135,7 @@ class Simultaneous:
             #    saver.restore(sess, conf.ckpt_file)
             #    print("Model Restored")
             print("Started Model Training...")
-            for i in range(self.batches):
+            for i in range(self.epochs):
               X_in, X_true, y = sess.run([X_in_tf, X_tf, y_tf])
               _, loss = sess.run([self.train_step,self.loss], feed_dict={self.X_in:X_in, self.X_true:X_true, self.y_raw:y})
               if i%10 == 0:
@@ -157,11 +157,11 @@ class Simultaneous:
         self.filter_size = conf.filter_size
         self.features = conf.features
         self.layers = conf.layers
-        self.iterations = conf.iterations
-        self.train_type = conf.train_type
+        self.train_iterations = conf.train_iterations
+        self.test_iterations = conf.test_iterations
         self.conditioning = conf.conditioning
         self.temperature = conf.temperature
-        self.batches = conf.batches
+        self.epochs = conf.epochs
         self.learning_rate = conf.learning_rate
 
         
@@ -170,8 +170,8 @@ class Simultaneous:
         self.y_raw = tf.placeholder(tf.int32, [self.batch_size])
         self.y = tf.reshape(self.y_raw, shape=[self.batch_size, 1, 1])
         self.y = tf.one_hot(self.y, self.labels)
-        X_out, X_single = self.simultaneous()
-        self.loss = tf.nn.l2_loss((X_out if self.train_type == 'full' else X_single) - self.X_true)
+        X_out, X_single = self.noncausal()
+        self.loss = tf.nn.l2_loss((X_out if self.train_type == 'full' else X_single) - self.X_true) ## TODO: train_type is gone
         self.train_step = tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.loss)
         print(X_out.shape)
         self.predictions = tf.to_float(tf.less(tf.random_uniform([self.batch_size,self.height,self.width,self.channels]), X_out))
