@@ -46,7 +46,7 @@ class PixelCNN:
         v_conv = tf.nn.conv2d(v_conv, W2, strides=[1, 1, 1, 1], padding='VALID') + b2
         
         h_conv += v_conv
-        h_conv += self.apply_conditioning(True)
+        h_conv += self.apply_conditioning(2*self.features)
         
         h_out = self.gate(h_conv[:,:,:,:self.features], h_conv[:,:,:,self.features:])
         
@@ -54,36 +54,33 @@ class PixelCNN:
 
     def layer(self, v_in, h_in, first=False):
         v_conv = self.vertical_stack(v_in, first=first)
-        v_out = v_conv + self.apply_conditioning(True)
+        v_out = v_conv + self.apply_conditioning(2*self.features)
         v_out = self.gate(v_out[:,:,:,:self.features], v_out[:,:,:,self.features:])
         h_out = self.horizontal_stack(h_in, v_conv, first=first)
         
-        skip = self.fully_connected(h_out, False)
+        skip = self.fully_connected(h_out, self.features)
         if not first:
-            h_out = self.fully_connected(h_out, False) + h_in
+            h_out = self.fully_connected(h_out, self.features) + h_in
         
         return v_out, h_out, skip
 
-    def fully_connected(self, input, final):
-        W = get_weights([1, 1, self.features, self.channels * self.values if final else self.features])
-        b = get_bias_weights([self.channels * self.values if final else self.features])
+    def fully_connected(self, input, out_features):
+        W = get_weights([1, 1, self.features, out_features])
+        b = get_bias_weights([out_features])
         out = tf.nn.conv2d(input, W, strides=[1, 1, 1, 1], padding='VALID') + b
-        if final:
-            out = tf.reshape(out, shape=[self.batch_size, self.height, self.width, self.channels, self.values])
         return out
         
-    def apply_conditioning(self, doubled):
-        doubler = 2 if doubled else 1
+    def apply_conditioning(self, out_features):
         if self.conditioning == 'none':
-            return tf.zeros([self.batch_size, self.height, self.width, self.features * doubler])
+            return tf.zeros([self.batch_size, self.height, self.width, out_features])
         elif self.conditioning == 'generic':
-            W = get_weights([1, 1, self.labels, self.features * doubler])
-            b = get_bias_weights([self.features * doubler])
-            return tf.tile(tf.reshape(tf.nn.conv2d(self.y, W, strides=[1, 1, 1, 1], padding='VALID') + b, shape=[self.batch_size, 1, 1, self.features * doubler]), [1, self.height, self.width, 1])
+            W = get_weights([1, 1, self.labels, out_features])
+            b = get_bias_weights([out_features])
+            return tf.tile(tf.reshape(tf.nn.conv2d(self.y, W, strides=[1, 1, 1, 1], padding='VALID') + b, shape=[self.batch_size, 1, 1, out_features]), [1, self.height, self.width, 1])
         elif self.conditioning == 'localised':
-            W = get_weights([1, 1, self.labels, self.height * self.width * self.features * doubler])
-            b = get_bias_weights([self.height * self.width * self.features * doubler])
-            return tf.reshape(tf.nn.conv2d(self.y, W, strides=[1, 1, 1, 1], padding='VALID') + b, shape=[self.batch_size, self.height, self.width, self.features * doubler])
+            W = get_weights([1, 1, self.labels, self.height * self.width * out_features])
+            b = get_bias_weights([self.height * self.width * out_features])
+            return tf.reshape(tf.nn.conv2d(self.y, W, strides=[1, 1, 1, 1], padding='VALID') + b, shape=[self.batch_size, self.height, self.width, out_features])
         else:
             assert False
 
@@ -96,16 +93,17 @@ class PixelCNN:
             outs.append(skip)
         v_in = tf.pad(v_in, [[0,0],[1,0],[0, 0],[0,0]])
         v_in = v_in[:,:-1,:,:]
-        outs.append(self.fully_connected(v_in, False))
-        outs.append(self.fully_connected(h_in, False))
-        outs.append(self.apply_conditioning(False))
+        outs.append(self.fully_connected(v_in, self.features))
+        outs.append(self.fully_connected(h_in, self.features))
+        outs.append(self.apply_conditioning(self.features))
         out = tf.reduce_sum(outs, 0)
         print(out.shape)
         out = tf.nn.relu(out)
-        out = self.fully_connected(out, False)
+        out = self.fully_connected(out, self.features)
         out = tf.nn.relu(out)
         print(out.shape)
-        out = self.fully_connected(out, True)
+        out = self.fully_connected(out, self.channels * self.values)
+        out = tf.reshape(out, shape=[self.batch_size, self.height, self.width, self.channels, self.values])
         print(out.shape)
         return out
         
@@ -238,5 +236,5 @@ class PixelCNN:
         self.predictions = self.sample(X_out)
         print(self.predictions.shape)
         
-        print('trainable variables:', len(tf.trainable_variables()))
+        print('trainable variables:', np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()]))
 
