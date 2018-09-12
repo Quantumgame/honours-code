@@ -13,7 +13,8 @@ if __name__ == "__main__":
     parser.add_argument('--restore', action='store_true', help='restore from checkpoint (must exist)')
     parser.add_argument('--model', type=str, choices=['pixelcnn', 'noncausal'], required=True)
     parser.add_argument('--layers', type=int, default=None, help='number of convolutional layers')
-    parser.add_argument('--features', type=int, default=None, help='number of convolutional filters per layer') 
+    parser.add_argument('--features', type=int, default=None, help='number of convolutional filters per layer')
+    parser.add_argument('--end_features', type=int, default=None, help='number of features in the final fully-connected layer') 
     parser.add_argument('--filter_size', type=int, default=None, help='size of convolutional filters')
     parser.add_argument('--epochs', type=int, default=None, help='number of training epochs to run')
     parser.add_argument('--batch_size', type=int, default=None, help='number of samples per minibatch (training epoch)')
@@ -33,6 +34,7 @@ if __name__ == "__main__":
     if conf.dataset == 'mnist':
         conf.layers = conf.layers or 15
         conf.features = conf.features or 16
+        conf.end_features = conf.end_features or 64
         conf.filter_size = conf.filter_size or 5
         conf.epochs = conf.epochs or 200000
         conf.batch_size = conf.batch_size or 32
@@ -40,6 +42,7 @@ if __name__ == "__main__":
     elif conf.dataset == 'imagenet':
         conf.layers = conf.layers or 15
         conf.features = conf.features or 128
+        conf.end_features = conf.end_features or 1024
         conf.filter_size = conf.filter_size or 5
         conf.epochs = conf.epochs or 200000
         conf.batch_size = conf.batch_size or 128
@@ -47,7 +50,7 @@ if __name__ == "__main__":
     else:
         assert False
     
-    # for quick test use python .\main.py --layers 3 --features 5 --epochs 101 --batch_size 6 --model pixelcnn
+    # for quick test use python .\main.py --layers 3 --features 5 --end_features 10 --epochs 101 --batch_size 6 --model pixelcnn
     
     data = Dataset(conf)
     model = PixelCNN(conf, data) if conf.model == 'pixelcnn' else NonCausal(conf, data)
