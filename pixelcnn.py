@@ -124,10 +124,10 @@ class PixelCNN:
 
         images = samples.reshape((100, 1, self.height, self.width))
         images = images.transpose(1, 2, 0, 3)
-        images = images.reshape((self.height * 10, self.width * 10))
+        images = images.reshape((self.height * 10, self.width * 10)) #TODO: support more than one channel
 
         filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M')+".png"
-        Image.fromarray(images.astype(np.int8)*255, mode='L').convert(mode='RGB').save(filename)
+        Image.fromarray((images*255).astype(np.int32)).convert('RGB').save(filename)
         
     def run_tests(self):
         self.causality_test()
@@ -175,8 +175,8 @@ class PixelCNN:
         
     def run(self):
         saver = tf.train.Saver()
-        X_tf, y_tf = self.data.get_plain_values()
-        X_test_tf, y_test_tf = self.data.get_plain_test_values()
+        train_data = self.data.get_plain_values()
+        test_data = self.data.get_plain_test_values()
         
         summary_writer = tf.summary.FileWriter('logs/pixelcnn')
 
@@ -189,22 +189,22 @@ class PixelCNN:
             global_step = sess.run(self.global_step)
             print("Started Model Training...")
             while global_step < self.epochs:
-              print('running', global_step, self.epochs)
-              X, y = sess.run([X_tf, y_tf])
-              summary, _ = sess.run([self.summaries, self.train_step], feed_dict={self.X:X, self.y_raw:y})
-              summary_writer.add_summary(summary, global_step)
+              #print('running', global_step, self.epochs)
+              X, y = sess.run(train_data)
+              train_summary, _, _ = sess.run([self.train_summary, self.loss, self.train_step], feed_dict={self.X:X, self.y_raw:y})
+              summary_writer.add_summary(train_summary, global_step)
               
               if global_step%1000 == 0 or global_step == (self.epochs - 1):
                 saver.save(sess, 'ckpts/pixelcnn.ckpt', global_step=global_step)
-                X, y = sess.run([X_test_tf, y_test_tf])
-                summary, test_loss = sess.run([self.summaries, self.loss], feed_dict={self.X:X, self.y_raw:y})
-                summary_writer.add_summary(summary, global_step)
+                X, y = sess.run(test_data)
+                test_summary, test_loss = sess.run([self.test_summary, self.loss], feed_dict={self.X:X, self.y_raw:y})
+                summary_writer.add_summary(test_summary, global_step)
                 print("batch %d, test loss %g"%(global_step, test_loss))
               global_step = sess.run(self.global_step)
-                
-            saver.save(sess, 'ckpts/pixelcnn.ckpt')
             
-            #self.generate_samples(sess)
+    def sample(self, logits):
+        probabilities = logits / self.temperature
+        return tf.reshape(tf.multinomial(tf.reshape(probabilities, shape=[self.batch_size*self.height*self.width*self.channels, self.values]), 1), shape=[self.batch_size,self.height,self.width,self.channels])
             
     def __init__(self, conf, data):
         self.channels = data.channels
@@ -231,14 +231,12 @@ class PixelCNN:
         self.y = tf.one_hot(self.y, self.labels)
         X_out = self.pixelcnn() # softmax has not been applied here, shape is [batch, height, width, channels, values]
         self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=X_out, labels=self.logitise(self.X)))
-        tf.summary.scalar('loss', self.loss)
+        self.train_summary = tf.summary.scalar('train_loss', self.loss)
+        self.test_summary = tf.summary.scalar('test_loss', self.loss)
         self.train_step = tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.loss, global_step=self.global_step)
         print(X_out.shape)
-        probabilities = X_out / self.temperature
-        self.predictions = tf.reshape(tf.multinomial(tf.reshape(probabilities, shape=[self.batch_size*self.height*self.width*self.channels, self.values]), 1), shape=[self.batch_size,self.height,self.width,self.channels])
+        self.predictions = self.sample(X_out)
         print(self.predictions.shape)
         
         print('trainable variables:', len(tf.trainable_variables()))
-        
-        self.summaries = tf.summary.merge_all()
 

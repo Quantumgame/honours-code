@@ -68,13 +68,13 @@ class Dataset:
         self.plain_data = self.plain_data.repeat().batch(conf.batch_size)
         
         self.plain_test_data = tf.data.Dataset.zip((test_images, test_labels))
-        self.plain_test_data = self.test_data.batch(int(self.test_size)).repeat()
+        self.plain_test_data = self.plain_test_data.batch(int(self.test_size)).repeat()
         
         self.corrupted_data = tf.data.Dataset.zip((images, labels)).flat_map(lambda image, label: self.make_corrupted_data(image, label, conf))
-        self.corrupted_data = self.data.repeat().batch(conf.batch_size)
+        self.corrupted_data = self.corrupted_data.repeat().batch(conf.batch_size)
         
         self.corrupted_test_data = tf.data.Dataset.zip((test_images, test_labels)).flat_map(lambda image, label: self.make_corrupted_data(image, label, conf))
-        self.corrupted_test_data = self.test_data.batch(int(self.test_size) * num_corruptions).repeat()
+        self.corrupted_test_data = self.corrupted_test_data.batch(int(self.test_size) * num_corruptions).repeat()
         
     def make_corrupted_data(self, image, label, conf):    
         pure_noise = tf.py_func(lambda arr: noise(arr, 1.0, self.noise_generator), [image], tf.float32)
