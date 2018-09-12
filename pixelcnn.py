@@ -238,5 +238,7 @@ class PixelCNN:
         self.predictions = tf.reshape(tf.multinomial(tf.reshape(probabilities, shape=[self.batch_size*self.height*self.width*self.channels, self.values]), 1), shape=[self.batch_size,self.height,self.width,self.channels])
         print(self.predictions.shape)
         
+        print('trainable variables:', len(tf.trainable_variables()))
+        
         self.summaries = tf.summary.merge_all()
 

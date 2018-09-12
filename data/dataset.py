@@ -5,42 +5,34 @@ import scipy.ndimage.filters
 import data.mnist as mnist
 import data.imagenet as imagenet    
     
-def noise(arr, proportion): #TODO: do not treat channels separately
+def noise(arr, proportion, generator):
     arr = arr.copy()
-    mask = np.random.random(size=arr.shape) < proportion
-    arr[mask] = np.random.random(size=arr.shape)[mask]
+    mask = np.random.random(size=arr.shape[:-1]) < proportion
+    arr[mask] = generator(arr.shape)[mask,:]
     return arr
     
-def noise_top(arr):
+def noise_top(arr, generator):
     arr = arr.copy()
     half = arr[:arr.shape[0]//2,:,:]
-    arr[:arr.shape[0]//2,:,:] = np.random.random(size=half.shape)
+    arr[:arr.shape[0]//2,:,:] = generator(half.shape)
     return arr
     
-def noise_bottom(arr):
+def noise_bottom(arr, generator):
     arr = arr.copy()
     half = arr[arr.shape[0]//2:,:,:]
-    arr[arr.shape[0]//2:,:,:] = np.random.random(size=half.shape)
+    arr[arr.shape[0]//2:,:,:] = generator(half.shape)
     return arr
     
-def get_noisy(data, proportion):
-    return data.map(lambda d: tf.py_func(lambda arr: noise(arr, proportion), [d], tf.float32))
+def mnist_noise(shape):
+    return np.random.choice([0.0, 1.0], size=shape, p=[0.87, 0.13])
     
 def blur(arr, sigma):
     return scipy.ndimage.filters.gaussian_filter(arr, [sigma,sigma,0])
-    
-def get_blurry(data, sigma):
-    return data.map(lambda d: tf.py_func(lambda arr: blur(arr, sigma), [d], tf.float32))
     
 def downsample(image, factor, height, width):
     assert height % factor == 0
     assert width % factor == 0
     return tf.image.resize_images(tf.image.resize_images(image, [height//factor, width//factor], method=tf.image.ResizeMethod.BICUBIC), [height, width], method=tf.image.ResizeMethod.BILINEAR)
-    
-def get_downsampled(data, factor, height, width):
-    assert height % factor == 0
-    assert width % factor == 0
-    return data.map(lambda d: downsample(d, factor, height, width))
     
 def concat_datasets(ds):
     d = tf.data.Dataset.from_tensors(ds[0])
@@ -48,20 +40,8 @@ def concat_datasets(ds):
         d = d.concatenate(tf.data.Dataset.from_tensors(dd))
     return d
     
-def make_test_data(image, label, conf, height, width):
-    data = tf.data.Dataset.from_tensors(())
-    
-    pure_noise = tf.py_func(lambda arr: noise(arr, 1.0), [image], tf.float32)
-    gap_top = tf.py_func(lambda arr: noise_top(arr), [image], tf.float32)
-    gap_bottom = tf.py_func(lambda arr: noise_bottom(arr), [image], tf.float32)
-    denoise = tf.py_func(lambda arr: noise(arr, conf.noise_prop), [image], tf.float32)
-    deblur = tf.py_func(lambda arr: blur(arr, conf.blur_sigma), [image], tf.float32)
-    upsample = downsample(image, conf.upsample_factor, height, width)
-    
-    datasets = [pure_noise, gap_top, gap_bottom, denoise, deblur, upsample]
-    datasets = [(data, image, label) for data in datasets]
-    return concat_datasets(datasets)
-    
+
+num_corruptions = 6
 
 class Dataset:
     def __init__(self, conf):        
@@ -71,12 +51,14 @@ class Dataset:
             self.values = 2
             self.labels = 10
             self.test_size = 10000
+            self.noise_generator = mnist_noise
         else:
             images, labels = imagenet.train()
             test_images, test_labels = imagenet.test()
             self.values = 256
             self.labels = 1000
-            self.test_size = -1 # TODO
+            self.test_size = None # TODO
+            self.noise_generator = None # TODO
             
         input_shape = images.output_shapes
         assert len(input_shape) == 3
@@ -87,43 +69,37 @@ class Dataset:
         
         self.plain_test_data = tf.data.Dataset.zip((test_images, test_labels))
         self.plain_test_data = self.test_data.batch(int(self.test_size)).repeat()
-            
-        plain = tf.data.Dataset.zip((images, images, labels))
-        noisy = tf.data.Dataset.zip((get_noisy(images, conf.noise_prop), images, labels))
-        blurry = tf.data.Dataset.zip((get_blurry(images, conf.blur_sigma), images, labels))
-        downsampled = tf.data.Dataset.zip((get_downsampled(images, conf.upsample_factor, self.height, self.width), images, labels))
         
-        #assert conf.plain_images or conf.denoising or conf.deblurring or conf.upsampling
+        self.corrupted_data = tf.data.Dataset.zip((images, labels)).flat_map(lambda image, label: self.make_corrupted_data(image, label, conf))
+        self.corrupted_data = self.data.repeat().batch(conf.batch_size)
         
-        datas = []
-        if conf.plain_images:
-            datas.append(plain)
-        if conf.denoising:
-            datas.append(noisy)
-        if conf.deblurring:
-            datas.append(blurry)
-        if conf.upsampling:
-            datas.append(downsampled)
+        self.corrupted_test_data = tf.data.Dataset.zip((test_images, test_labels)).flat_map(lambda image, label: self.make_corrupted_data(image, label, conf))
+        self.corrupted_test_data = self.test_data.batch(int(self.test_size) * num_corruptions).repeat()
         
-        # Interleave datasets, see: https://stackoverflow.com/questions/47343228/interleaving-tf-data-datasets
-        self.data = tf.data.Dataset.zip(tuple(datas)).flat_map(lambda *ds: concat_datasets(ds))
-        self.data = self.data.repeat().batch(conf.batch_size)
+    def make_corrupted_data(self, image, label, conf):    
+        pure_noise = tf.py_func(lambda arr: noise(arr, 1.0, self.noise_generator), [image], tf.float32)
+        gap_top = tf.py_func(lambda arr: noise_top(arr, self.noise_generator), [image], tf.float32)
+        gap_bottom = tf.py_func(lambda arr: noise_bottom(arr, self.noise_generator), [image], tf.float32)
+        noisy = tf.py_func(lambda arr: noise(arr, conf.noise_prop, self.noise_generator), [image], tf.float32)
+        blurry = tf.py_func(lambda arr: blur(arr, conf.blur_sigma), [image], tf.float32)
+        downsampled = downsample(image, conf.upsample_factor, self.height, self.width)
         
-        self.test_data = tf.data.Dataset.zip((test_images, test_labels)).flat_map(lambda image, label: make_test_data(image, label, conf, self.height, self.width))
-        self.test_data = self.test_data.batch(int(self.test_size) * len(datas)).repeat()
+        datasets = [pure_noise, gap_top, gap_bottom, noisy, blurry, downsampled]
+        assert len(datasets) == num_corruptions
+        return concat_datasets([(data, image, label) for data in datasets])
         
         
-    def get_values(self):
-        # Returns (input, output, label) tuples
-        return self.data.make_one_shot_iterator().get_next()
+    def get_corrupted_values(self):
+        # Returns (corrupted, true, label) tuples
+        return self.corrupted_data.make_one_shot_iterator().get_next()
         
     def get_plain_values(self):
         # Returns (input, label) tuples
         return self.plain_data.make_one_shot_iterator().get_next()
         
-    def get_test_values(self):
-        # Returns (input, output, label) tuples
-        return self.test_data.make_one_shot_iterator().get_next()
+    def get_corrupted_test_values(self):
+        # Returns (corrupted, true, label) tuples
+        return self.corrupted_test_data.make_one_shot_iterator().get_next()
         
     def get_plain_test_values(self):
         # Returns (input, label) tuples

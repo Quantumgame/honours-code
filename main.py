@@ -21,14 +21,10 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', type=str, choices=['mnist', 'imagenet'], default='mnist')
     parser.add_argument('--conditioning', type=str, choices=['none', 'generic', 'localised'], default='none', help='how to condition on class labels: none = not at all, generic = overall condition for whole image, localised = condition can vary across the image')
     parser.add_argument('--temperature', type=float, default=1/1.05, help='Temperature for random sampling at the softmax layer')
-    ## These four options only apply to noncausal. They are not mutually exclusive: the train and test datasets will contain a mix of the selected ones.
-    parser.add_argument('--plain_images', action='store_true', help='Train noncausal to output the input image')
-    parser.add_argument('--denoising', action='store_true', help='Train noncausal to denoise the input image')
-    parser.add_argument('--noise_prop', type=float, default=0.5, help='Proportion of pixels to replace with noise')
-    parser.add_argument('--deblurring', action='store_true', help='Train noncausal to deblur the input image')
-    parser.add_argument('--blur_sigma', type=float, default=1.0, help='Sigma for gaussian blur')
-    parser.add_argument('--upsampling', action='store_true', help='Train noncausal to upsample the input image')
-    parser.add_argument('--upsample_factor', type=int, default=2, help='Factor by which to downsample the data')
+    ## These four options only apply to noncausal
+    parser.add_argument('--noise_prop', type=float, default=0.5, help='Proportion of pixels to replace with noise for denoising trials')
+    parser.add_argument('--blur_sigma', type=float, default=1.0, help='Sigma for gaussian blur for deblurring trials')
+    parser.add_argument('--upsample_factor', type=int, default=2, help='Factor by which to downsample the data for upsampling trials')
     ## These options apply only to noncausal
     parser.add_argument('--train_iterations', type=int, default=2, help='How many times to apply the noncausal model to the inputs, backpropogating errors each time')
     parser.add_argument('--test_iterations', type=int, default=4, help='At test time, how many times to apply the noncausal model to the inputs, measuring the error each time')

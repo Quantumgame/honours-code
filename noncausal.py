@@ -175,4 +175,6 @@ class NonCausal:
         self.train_step = tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.loss)
         print(X_out.shape)
         self.predictions = tf.to_float(tf.less(tf.random_uniform([self.batch_size,self.height,self.width,self.channels]), X_out))
+        
+        print('trainable variables:', len(tf.trainable_variables()))
 
