@@ -51,8 +51,8 @@ class PixelCNN:
 
         v_cond = self.apply_conditioning(2*self.features)
         v_conv = self.padded_conv2d(v_in,
-            [self.filter_size, self.filter_size, self.channels if first_layer else self.features, 2*self.features],
-            [[0,0],[self.filter_size-1,0],[self.filter_size//2, self.filter_size//2],[0,0]]
+            [self.filter_size-1, self.filter_size, self.channels if first_layer else self.features, 2*self.features],
+            [[0,0],[self.filter_size-2,0],[self.filter_size//2, self.filter_size//2],[0,0]]
         )
         v_out = self.gate(v_conv + v_cond)
         
