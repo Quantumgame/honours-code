@@ -26,6 +26,7 @@ if __name__ == "__main__":
     parser.add_argument('--noise_prop', type=float, default=0.5, help='Proportion of pixels to replace with noise for denoising trials')
     parser.add_argument('--blur_sigma', type=float, default=1.0, help='Sigma for gaussian blur for deblurring trials')
     parser.add_argument('--upsample_factor', type=int, default=2, help='Factor by which to downsample the data for upsampling trials')
+    parser.add_argument('--use_independence_loss', action='store_true', help='augment the cross-entropy loss with a term discouraging a pixel from depending on itself in the input')
     ## These options apply only to noncausal
     parser.add_argument('--train_iterations', type=int, default=2, help='How many times to apply the noncausal model to the inputs, backpropogating errors each time')
     parser.add_argument('--test_iterations', type=int, default=4, help='At test time, how many times to apply the noncausal model to the inputs, measuring the error each time')

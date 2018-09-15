@@ -57,7 +57,7 @@ class PixelCNN:
         v_out = self.gate(v_conv + v_cond)
         
         if first_layer:
-            h_in = self.shift_left(h_in)
+            h_in = self.shift_left(h_in) # TODO: encode dependencies among channels for the same pixel
 
         h_cond = self.apply_conditioning(2*self.features)
         v_cross = self.fully_connected(self.shift_up(v_conv), 2*self.features, 2*self.features)
