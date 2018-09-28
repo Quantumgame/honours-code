@@ -167,31 +167,11 @@ class NonCausal:
         print('Predictions', [p.shape for p in predictions])
         print('Test completed')
         
-    def pairwise_gradient(self, logits, ground_truth):
-        # logits: [batch, height, width, channel, logit]
-        # ground_truth: [batch, height, width, channel]
-        vectorised_logits = tf.transpose(tf.reshape(logits, shape=[self.batch_size, self.height*self.width*self.channels, self.values]), [1,0,2])
-        vectorised_truths = tf.transpose(tf.reshape(ground_truth, shape=[self.batch_size, self.height*self.width*self.channels]), [1,0])
-        print(vectorised_logits.dtype, vectorised_truths.dtype)
-        ## vectorised_logit: [batch, logit]
-        ## vectorised_truth: [batch]
-        ## grads = tf.gradients(vectorised_logit, vectorised_truth)
-        ## grads: [batch, logit]
-        # TODO: this doesn't actually compile yet
-        return tf.map_fn(lambda x: tf.gradients(*x), (vectorised_logits, vectorised_truths), dtype=[tf.float32])
-        
-    def independence_loss(self, logits_list, ground_truth):
-        ## TODO: if this is slow, try using goodfellow's trick https://github.com/tensorflow/tensorflow/issues/4897#issuecomment-290997283
-        return tf.reduce_mean([self.pairwise_gradient(logits, ground_truth) for logits in logits_list])
-        
     def cross_entropy_loss(self, logits_list, ground_truth):
         return tf.reduce_mean([tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self.logitise(ground_truth)) for logits in logits_list])
         
     def compute_train_loss(self, logits_list, ground_truth):
-        if self.use_independence_loss:
-            return self.cross_entropy_loss(logits_list, ground_truth) + self.independence_loss(logits_list, ground_truth) ## TODO compute the appropriate weighting for these two components
-        else:
-            return self.cross_entropy_loss(logits_list, ground_truth)
+        return self.cross_entropy_loss(logits_list, ground_truth)
         
     def compute_test_loss(self, logits_list, ground_truth):
         return self.cross_entropy_loss(logits_list, ground_truth)
@@ -215,7 +195,6 @@ class NonCausal:
         
         self.train_iterations = conf.train_iterations
         self.test_iterations = conf.test_iterations
-        self.use_independence_loss = conf.use_independence_loss
 
         self.global_step = tf.Variable(0, trainable=False)
         
