@@ -41,7 +41,7 @@ def concat_datasets(ds):
     return d
     
 
-num_corruptions = 6
+num_corruptions = 5
 
 class Dataset:
     def __init__(self, conf):        
@@ -77,14 +77,14 @@ class Dataset:
         self.corrupted_test_data = self.corrupted_test_data.batch(int(self.test_size) * num_corruptions).repeat()
         
     def make_corrupted_data(self, image, label, conf):    
-        pure_noise = tf.py_func(lambda arr: noise(arr, 1.0, self.noise_generator), [image], tf.float32)
+        #pure_noise = tf.py_func(lambda arr: noise(arr, 1.0, self.noise_generator), [image], tf.float32)
         gap_top = tf.py_func(lambda arr: noise_top(arr, self.noise_generator), [image], tf.float32)
         gap_bottom = tf.py_func(lambda arr: noise_bottom(arr, self.noise_generator), [image], tf.float32)
         noisy = tf.py_func(lambda arr: noise(arr, conf.noise_prop, self.noise_generator), [image], tf.float32)
         blurry = tf.py_func(lambda arr: blur(arr, conf.blur_sigma), [image], tf.float32)
         downsampled = downsample(image, conf.upsample_factor, self.height, self.width)
         
-        datasets = [pure_noise, gap_top, gap_bottom, noisy, blurry, downsampled]
+        datasets = [gap_top, gap_bottom, noisy, blurry, downsampled]
         assert len(datasets) == num_corruptions
         return concat_datasets([(data, image, label) for data in datasets])
         
