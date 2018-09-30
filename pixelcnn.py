@@ -145,8 +145,12 @@ class PixelCNN:
 
               if global_step%1000 == 0 or global_step == self.epochs:
                 saver.save(sess, 'ckpts/pixelcnn.ckpt', global_step=global_step)
-                X, y = sess.run(test_data)
-                test_summary, test_loss = sess.run([self.test_summary, self.loss], feed_dict={self.X:X, self.y_raw:y})
+                sess.run([self.reset_loss_mean])
+                for i in range(200):
+                    X, y = sess.run(test_data)
+                    sess.run([self.update_loss_mean], feed_dict={self.X:X, self.y_raw:y})
+                    
+                test_summary, test_loss = sess.run([self.test_summary, self.loss_mean], feed_dict={self.X:X, self.y_raw:y})
                 summary_writer.add_summary(test_summary, global_step)
                 print("epoch %d, test loss %g"%(global_step, test_loss))
               
@@ -218,7 +222,12 @@ class PixelCNN:
         logits, predictions = self.pixelcnn()
         self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self.logitise(self.X)))
         self.train_summary = tf.summary.scalar('train_loss', self.loss)
-        self.test_summary = tf.summary.scalar('test_loss', self.loss)
+        with tf.name_scope('loss_mean_calc'):
+            self.loss_mean, self.update_loss_mean = tf.metrics.mean(self.loss)
+        self.test_summary = tf.summary.scalar('test_loss', self.loss_mean)
+        
+        self.reset_loss_mean = tf.initialize_variables([i for i in tf.local_variables() if 'loss_mean_calc' in i.name])
+        
         self.train_step = tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.loss, global_step=self.global_step)
         self.predictions = predictions
         

@@ -68,7 +68,7 @@ class Dataset:
         self.plain_data = self.plain_data.repeat().batch(conf.batch_size)
         
         self.plain_test_data = tf.data.Dataset.zip((test_images, test_labels))
-        self.plain_test_data = self.plain_test_data.batch(int(self.test_size)).repeat()
+        self.plain_test_data = self.plain_test_data.repeat().batch(50)
         
         self.corrupted_data = tf.data.Dataset.zip((images, labels)).flat_map(lambda image, label: self.make_corrupted_data(image, label, conf))
         self.corrupted_data = self.corrupted_data.repeat().batch(conf.batch_size)
