@@ -106,20 +106,31 @@ class PixelCNN:
         
     def generate_samples(self, sess):
         print("Generating Sample Images...")
-        samples = np.zeros((100, self.height, self.width, self.channels), dtype=np.float32)
-        conditions = [i // 10 for i in range(100)]
+        horz_samples = 10
+        vert_samples = 10
+        samples = np.zeros((horz_samples*vert_samples, self.height, self.width, self.channels), dtype=np.float32)
+        conditions = [i // horz_samples for i in range(horz_samples*vert_samples)]
 
         for i in range(self.height):
             for j in range(self.width):
+                print(i,j)
                 predictions = sess.run(self.predictions, feed_dict={self.X:samples, self.y_raw:conditions})
                 samples[:, i, j, :] = predictions[:, i, j, :]
 
-        images = samples.reshape((100, 1, self.height, self.width))
-        images = images.transpose(1, 2, 0, 3)
-        images = images.reshape((self.height * 10, self.width * 10)) #TODO: support more than one channel
+        images = samples.reshape((vert_samples, horz_samples, self.height, self.width))
+        images = images.transpose(0, 2, 1, 3)
+        images = images.reshape((self.height * vert_samples, self.width * horz_samples)) #TODO: support more than one channel
 
         filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M')+".png"
         Image.fromarray((images*255).astype(np.int32)).convert('RGB').save(filename)
+        
+    def samples(self):
+        assert self.restore
+        saver = tf.train.Saver()
+        with tf.Session() as sess: 
+            ckpt = tf.train.get_checkpoint_state('ckpts')
+            saver.restore(sess, ckpt.model_checkpoint_path)
+            self.generate_samples(sess)
         
     def run(self):
         saver = tf.train.Saver()

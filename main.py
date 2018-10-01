@@ -11,6 +11,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--test', action='store_true', help='run unit tests instead of training model')
     parser.add_argument('--restore', action='store_true', help='restore from checkpoint (must exist)')
+    parser.add_argument('--samples', action='store_true', help='generate samples from trained model')
     parser.add_argument('--model', type=str, choices=['pixelcnn', 'noncausal'], required=True)
     parser.add_argument('--layers', type=int, default=None, help='number of convolutional layers')
     parser.add_argument('--features', type=int, default=None, help='number of convolutional filters per layer')
@@ -57,5 +58,7 @@ if __name__ == "__main__":
     
     if conf.test:
         model.run_tests()
+    elif conf.samples:
+        model.samples()
     else:
         model.run()
