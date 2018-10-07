@@ -119,11 +119,10 @@ class NonCausal:
 
     def run(self):
         saver = tf.train.Saver()
-        if self.use_independence_loss:
-            train_data = self.data.get_plain_values()
-        else:
-            train_data = self.data.get_corrupted_values() 
+        train_data = self.data.get_corrupted_values()
+        noise_train_data = self.data.get_noise_values()
         test_data = self.data.get_corrupted_test_values()
+        noise_test_data = self.data.get_noise_test_values()
         
         summary_writer = tf.summary.FileWriter('logs/noncausal')
 
@@ -137,21 +136,37 @@ class NonCausal:
             print("Started Model Training...")
             while global_step < self.epochs:
               #print('running', global_step, self.epochs)
-              if self.use_independence_loss:
-                X_true, y = sess.run(train_data)
-                X_corrupted = X_true
-              else:
+              if global_step % 2 == 0:
                 X_corrupted, X_true, y = sess.run(train_data)
-              train_summary, _, _ = sess.run([self.train_summary, self.train_loss, self.train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
-              summary_writer.add_summary(train_summary, global_step)
-              global_step = sess.run(self.global_step)
+                train_summary, _, _ = sess.run([self.train_summary, self.train_loss, self.train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
+                summary_writer.add_summary(train_summary, global_step)
+                global_step = sess.run(self.global_step)
+              else:
+                X_corrupted, X_true, y = sess.run(noise_train_data)
+                first_iteration_train_summary, _, _ = sess.run([self.first_iteration_train_summary, self.first_iteration_train_loss, self.first_iteration_train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
+                summary_writer.add_summary(first_iteration_train_summary, global_step)
+                global_step = sess.run(self.global_step)
 
               if global_step%1000 == 0 or global_step == self.epochs:
                 saver.save(sess, 'ckpts/noncausal.ckpt', global_step=global_step)
-                X_corrupted, X_true, y = sess.run(test_data)
-                test_summary, test_loss = sess.run([self.test_summary, self.test_loss], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
+                sess.run([self.reset_loss_mean, self.reset_first_iteration_loss_mean])
+                
+                for i in range(200*5):
+                    X_corrupted, X_true, y = sess.run(test_data)
+                    sess.run([self.update_loss_mean], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
+                    
+                test_summary, test_loss = sess.run([self.test_summary, self.loss_mean])
                 summary_writer.add_summary(test_summary, global_step)
-                print("epoch %d, test loss %g"%(global_step, test_loss))
+
+                    
+                for i in range(200):
+                    X_corrupted, X_true, y = sess.run(noise_test_data)
+                    sess.run([self.update_first_iteration_loss_mean], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
+                    
+                first_iteration_test_summary, first_iteration_test_loss = sess.run([self.first_iteration_test_summary, self.first_iteration_loss_mean])
+                summary_writer.add_summary(first_iteration_test_summary, global_step)
+                
+                print("epoch %d, test loss %g, noise test loss %g"%(global_step, test_loss, first_iteration_test_loss))
               
             
     def run_tests(self):
@@ -161,9 +176,13 @@ class NonCausal:
             sess.run(tf.global_variables_initializer())
             X_corrupted, X_true, y = sess.run(train_data)
             train_loss, _ = sess.run([self.train_loss, self.train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
+            first_iteration_train_loss, _ = sess.run([self.first_iteration_train_loss, self.first_iteration_train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
             test_loss, predictions = sess.run([self.test_loss, self.predictions], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
+            first_iteration_test_loss, predictions = sess.run([self.first_iteration_test_loss, self.predictions], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
         print('Train loss', train_loss)
+        print('First Iter Train loss', first_iteration_train_loss)
         print('Test loss', test_loss)
+        print('First Iter Test loss', first_iteration_test_loss)
         print('Predictions', [p.shape for p in predictions])
         print('Test completed')
         
@@ -206,10 +225,24 @@ class NonCausal:
         self.y = tf.stop_gradient(tf.one_hot(self.y, self.labels))
         train_logits, test_logits, test_predictions = self.noncausal()
         self.train_loss = self.compute_train_loss(train_logits, self.X_true)
+        self.first_iteration_train_loss = self.compute_train_loss(train_logits[:1], self.X_true)
+        
         self.test_loss = self.compute_test_loss(test_logits, self.X_true)
+        with tf.name_scope('loss_mean_calc'):
+            self.loss_mean, self.update_loss_mean = tf.metrics.mean(self.test_loss)
+        self.test_summary = tf.summary.scalar('test_loss', self.loss_mean)
+        self.reset_loss_mean = tf.initialize_variables([i for i in tf.local_variables() if 'loss_mean_calc' in i.name])
+        
+        self.first_iteration_test_loss = self.compute_test_loss(test_logits[:1], self.X_true)
+        with tf.name_scope('loss_mean_first_iter_calc'):
+            self.first_iteration_loss_mean, self.update_first_iteration_loss_mean = tf.metrics.mean(self.first_iteration_test_loss)
+        self.first_iteration_test_summary = tf.summary.scalar('first_iteration_test_loss', self.first_iteration_loss_mean)
+        self.reset_first_iteration_loss_mean = tf.initialize_variables([i for i in tf.local_variables() if 'loss_mean_first_iter_calc' in i.name])
+        
         self.train_summary = tf.summary.scalar('train_loss', self.train_loss)
-        self.test_summary = tf.summary.scalar('test_loss', self.test_loss)
+        self.first_iteration_train_summary = tf.summary.scalar('first_iteration_train_loss', self.first_iteration_train_loss)
         self.train_step = tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.train_loss, global_step=self.global_step)
+        self.first_iteration_train_step = tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.first_iteration_train_loss, global_step=self.global_step)
         self.predictions = test_predictions
         
         print('trainable variables:', np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()]))

@@ -74,7 +74,13 @@ class Dataset:
         self.corrupted_data = self.corrupted_data.repeat().batch(conf.batch_size)
         
         self.corrupted_test_data = tf.data.Dataset.zip((test_images, test_labels)).flat_map(lambda image, label: self.make_corrupted_data(image, label, conf))
-        self.corrupted_test_data = self.corrupted_test_data.batch(int(self.test_size) * num_corruptions).repeat()
+        self.corrupted_test_data = self.corrupted_test_data.repeat().batch(50)
+        
+        self.noise_data = tf.data.Dataset.zip((images, labels)).map(lambda image, label: self.make_noise_data(image, label, conf))
+        self.noise_data = self.noise_data.repeat().batch(conf.batch_size)
+        
+        self.noise_test_data = tf.data.Dataset.zip((test_images, test_labels)).map(lambda image, label: self.make_noise_data(image, label, conf))
+        self.noise_test_data = self.noise_test_data.repeat().batch(50)
         
     def make_corrupted_data(self, image, label, conf):    
         #pure_noise = tf.py_func(lambda arr: noise(arr, 1.0, self.noise_generator), [image], tf.float32)
@@ -88,19 +94,30 @@ class Dataset:
         assert len(datasets) == num_corruptions
         return concat_datasets([(data, image, label) for data in datasets])
         
-        
-    def get_corrupted_values(self):
-        # Returns (corrupted, true, label) tuples
-        return self.corrupted_data.make_one_shot_iterator().get_next()
+    def make_noise_data(self, image, label, conf):
+        pure_noise = tf.py_func(lambda arr: noise(arr, 1.0, self.noise_generator), [image], tf.float32)
+        return (pure_noise, image, label)
         
     def get_plain_values(self):
         # Returns (input, label) tuples
         return self.plain_data.make_one_shot_iterator().get_next()
         
-    def get_corrupted_test_values(self):
+    def get_corrupted_values(self):
         # Returns (corrupted, true, label) tuples
-        return self.corrupted_test_data.make_one_shot_iterator().get_next()
+        return self.corrupted_data.make_one_shot_iterator().get_next()
+        
+    def get_noise_values(self):
+        # Returns (noise, true, label) tuples
+        return self.noise_data.make_one_shot_iterator().get_next()
         
     def get_plain_test_values(self):
         # Returns (input, label) tuples
         return self.plain_test_data.make_one_shot_iterator().get_next()
+        
+    def get_corrupted_test_values(self):
+        # Returns (corrupted, true, label) tuples
+        return self.corrupted_test_data.make_one_shot_iterator().get_next()
+        
+    def get_noise_test_values(self):
+        # Returns (noise, true, label) tuples
+        return self.noise_test_data.make_one_shot_iterator().get_next()
