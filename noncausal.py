@@ -103,19 +103,46 @@ class NonCausal:
     def generate_samples(self, sess):
         print("Generating Sample Images...")
         X_corrupted, X_true, y = sess.run(self.data.get_corrupted_test_values())
+        horz_samples = 50
 
-        predictions = sess.run([p[:100,:,:,:] for p in self.predictions], feed_dict={self.X_in:X_corrupted, self.y_raw:y})
+        predictions = sess.run([p[:horz_samples,:,:,:] for p in self.predictions], feed_dict={self.X_in:X_corrupted, self.y_raw:y})
         
-        X_in = X_corrupted.reshape((100, 1, self.height, self.width))
-        predictions = tuple(p.reshape((100, 1, self.height, self.width)) for p in predictions)
+        X_in = X_corrupted[:horz_samples,:,:,:].reshape((horz_samples, 1, self.height, self.width))
+        predictions = tuple(p.reshape((horz_samples, 1, self.height, self.width)) for p in predictions)
         assert len(predictions) == self.test_iterations
-        X_true = X_true.reshape((100, 1, self.height, self.width))
+        X_true = X_true[:horz_samples,:,:,:].reshape((horz_samples, 1, self.height, self.width))
         images = np.concatenate((X_in,) + predictions + (X_true,), axis=1)
         images = images.transpose(1, 2, 0, 3)
-        images = images.reshape((self.height * (self.test_iterations + 2), self.width * 100)) #TODO: support more than one channel
+        images = images.reshape((self.height * (self.test_iterations + 2), self.width * horz_samples)) #TODO: support more than one channel
 
         filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M')+".png"
         Image.fromarray((images*255).astype(np.int32)).convert('RGB').save(filename)
+        
+        print("Generating Sample Images 2...")
+        
+        X_corrupted, _, y = sess.run(self.data.get_noise_test_values())
+        horz_samples = 50
+
+        predictions = sess.run([p[:horz_samples,:,:,:] for p in self.predictions], feed_dict={self.X_in:X_corrupted, self.y_raw:y})
+        
+        X_in = X_corrupted[:horz_samples,:,:,:].reshape((horz_samples, 1, self.height, self.width))
+        predictions = tuple(p.reshape((horz_samples, 1, self.height, self.width)) for p in predictions)
+        assert len(predictions) == self.test_iterations
+        images = np.concatenate((X_in,) + predictions, axis=1)
+        images = images.transpose(1, 2, 0, 3)
+        images = images.reshape((self.height * (self.test_iterations + 1), self.width * horz_samples)) #TODO: support more than one channel
+
+        filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M_noise')+".png"
+        Image.fromarray((images*255).astype(np.int32)).convert('RGB').save(filename)
+        
+        
+    def samples(self):
+        assert self.restore
+        saver = tf.train.Saver()
+        with tf.Session() as sess: 
+            ckpt = tf.train.get_checkpoint_state('ckpts')
+            saver.restore(sess, ckpt.model_checkpoint_path)
+            self.generate_samples(sess)
 
     def run(self):
         saver = tf.train.Saver()
