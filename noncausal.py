@@ -26,24 +26,12 @@ class NonCausal:
         out = tf.nn.conv2d(input, W, strides=[1, 1, 1, 1], padding='VALID')
         if bias:
             out += get_bias_weights('b', [out_features])
-        return out
-        
-    def apply_conditioning(self, out_features):
-        if self.conditioning == 'none':
-            return tf.zeros([self.batch_size, self.height, self.width, out_features])
-        elif self.conditioning == 'generic':
-            return tf.tile(tf.reshape(self.fully_connected(self.y, self.labels, out_features), shape=[self.batch_size, 1, 1, out_features]), [1, self.height, self.width, 1])
-        elif self.conditioning == 'localised':
-            return tf.reshape(self.fully_connected(self.y, self.labels, self.height * self.width * out_features), shape=[self.batch_size, self.height, self.width, out_features])
-        else:
-            assert False     
+        return out    
         
     def layer(self, input, first_layer=False, last_layer=False):
         assert not (first_layer and last_layer)
-        with tf.variable_scope('cond'):
-            condition = self.apply_conditioning(2*self.features)
         with tf.variable_scope('main'):
-            out = self.gate(self.conv2d(input, [self.filter_size, self.filter_size, self.channels if first_layer else self.features, 2*self.features]) + condition)
+            out = self.gate(self.conv2d(input, [self.filter_size, self.filter_size, self.channels if first_layer else self.features, 2*self.features]))
         with tf.variable_scope('res'):
             residual = self.fully_connected(out, self.features, self.end_features if last_layer else self.features)
         with tf.variable_scope('skip'):
@@ -56,9 +44,6 @@ class NonCausal:
         return input + residual, skip
         
     def end(self, outs):
-        with tf.variable_scope('cond'):
-            condition = self.apply_conditioning(self.end_features)
-        outs.append(condition)
         out = tf.nn.relu(tf.reduce_sum(outs, 0))
         with tf.variable_scope('full1'):
             out = tf.nn.relu(self.fully_connected(out, self.end_features, self.end_features))
@@ -102,16 +87,16 @@ class NonCausal:
         
     def generate_samples(self, sess):
         print("Generating Sample Images...")
-        X_corrupted, X_true, y = sess.run(self.data.get_corrupted_test_values())
+        X_corrupted, X_true, _ = sess.run(self.data.get_corrupted_test_values())
         horz_samples = 50
 
-        predictions = sess.run([p[:horz_samples,:,:,:] for p in self.predictions], feed_dict={self.X_in:X_corrupted, self.y_raw:y})
+        predictions = sess.run([p[:horz_samples,:,:,:] for p in self.predictions], feed_dict={self.X_in:X_corrupted})
         
         X_in = X_corrupted[:horz_samples,:,:,:].reshape((horz_samples, 1, self.height, self.width))
         predictions = tuple(p.reshape((horz_samples, 1, self.height, self.width)) for p in predictions)
         assert len(predictions) == self.test_iterations
         X_true = X_true[:horz_samples,:,:,:].reshape((horz_samples, 1, self.height, self.width))
-        images = np.concatenate((X_in,) + predictions + (X_true,), axis=1)
+        images = np.concatenate((X_true,) + (X_in,) + predictions, axis=1)
         images = images.transpose(1, 2, 0, 3)
         images = images.reshape((self.height * (self.test_iterations + 2), self.width * horz_samples)) #TODO: support more than one channel
 
@@ -120,10 +105,10 @@ class NonCausal:
         
         print("Generating Sample Images 2...")
         
-        X_corrupted, _, y = sess.run(self.data.get_noise_test_values())
+        X_corrupted, _, _ = sess.run(self.data.get_noise_test_values())
         horz_samples = 50
 
-        predictions = sess.run([p[:horz_samples,:,:,:] for p in self.predictions], feed_dict={self.X_in:X_corrupted, self.y_raw:y})
+        predictions = sess.run([p[:horz_samples,:,:,:] for p in self.predictions], feed_dict={self.X_in:X_corrupted})
         
         X_in = X_corrupted[:horz_samples,:,:,:].reshape((horz_samples, 1, self.height, self.width))
         predictions = tuple(p.reshape((horz_samples, 1, self.height, self.width)) for p in predictions)
@@ -161,39 +146,39 @@ class NonCausal:
                 sess.run(tf.global_variables_initializer())
             global_step = sess.run(self.global_step)
             print("Started Model Training...")
-            while global_step < self.epochs:
-              #print('running', global_step, self.epochs)
+            while global_step < self.iterations:
+              #print('running', global_step, self.iterations)
               if global_step % 2 == 0:
-                X_corrupted, X_true, y = sess.run(train_data)
-                train_summary, _, _ = sess.run([self.train_summary, self.train_loss, self.train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
+                X_corrupted, X_true, _ = sess.run(train_data)
+                train_summary, _, _ = sess.run([self.train_summary, self.train_loss, self.train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true})
                 summary_writer.add_summary(train_summary, global_step)
                 global_step = sess.run(self.global_step)
               else:
-                X_corrupted, X_true, y = sess.run(noise_train_data)
-                first_iteration_train_summary, _, _ = sess.run([self.first_iteration_train_summary, self.first_iteration_train_loss, self.first_iteration_train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
+                X_corrupted, X_true, _ = sess.run(noise_train_data)
+                first_iteration_train_summary, _, _ = sess.run([self.first_iteration_train_summary, self.first_iteration_train_loss, self.first_iteration_train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true})
                 summary_writer.add_summary(first_iteration_train_summary, global_step)
                 global_step = sess.run(self.global_step)
 
-              if global_step%1000 == 0 or global_step == self.epochs:
+              if global_step%1000 == 0 or global_step == self.iterations:
                 saver.save(sess, 'ckpts/noncausal.ckpt', global_step=global_step)
                 sess.run([self.reset_loss_mean, self.reset_first_iteration_loss_mean])
                 
                 for i in range(200*5):
-                    X_corrupted, X_true, y = sess.run(test_data)
-                    sess.run([self.update_loss_mean], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
+                    X_corrupted, X_true, _ = sess.run(test_data)
+                    sess.run([self.update_loss_mean], feed_dict={self.X_in:X_corrupted, self.X_true:X_true})
                     
                 test_summary, test_loss = sess.run([self.test_summary, self.loss_mean])
                 summary_writer.add_summary(test_summary, global_step)
 
                     
                 for i in range(200):
-                    X_corrupted, X_true, y = sess.run(noise_test_data)
-                    sess.run([self.update_first_iteration_loss_mean], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
+                    X_corrupted, X_true, _ = sess.run(noise_test_data)
+                    sess.run([self.update_first_iteration_loss_mean], feed_dict={self.X_in:X_corrupted, self.X_true:X_true})
                     
                 first_iteration_test_summary, first_iteration_test_loss = sess.run([self.first_iteration_test_summary, self.first_iteration_loss_mean])
                 summary_writer.add_summary(first_iteration_test_summary, global_step)
                 
-                print("epoch %d, test loss %g, noise test loss %g"%(global_step, test_loss, first_iteration_test_loss))
+                print("iteration %d, test loss %g, noise test loss %g"%(global_step, test_loss, first_iteration_test_loss))
               
             
     def run_tests(self):
@@ -201,11 +186,11 @@ class NonCausal:
         train_data = self.data.get_corrupted_values()
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
-            X_corrupted, X_true, y = sess.run(train_data)
-            train_loss, _ = sess.run([self.train_loss, self.train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
-            first_iteration_train_loss, _ = sess.run([self.first_iteration_train_loss, self.first_iteration_train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
-            test_loss, predictions = sess.run([self.test_loss, self.predictions], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
-            first_iteration_test_loss, predictions = sess.run([self.first_iteration_test_loss, self.predictions], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.y_raw:y})
+            X_corrupted, X_true, _ = sess.run(train_data)
+            train_loss, _ = sess.run([self.train_loss, self.train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true})
+            first_iteration_train_loss, _ = sess.run([self.first_iteration_train_loss, self.first_iteration_train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true})
+            test_loss, predictions = sess.run([self.test_loss, self.predictions], feed_dict={self.X_in:X_corrupted, self.X_true:X_true})
+            first_iteration_test_loss, predictions = sess.run([self.first_iteration_test_loss, self.predictions], feed_dict={self.X_in:X_corrupted, self.X_true:X_true})
         print('Train loss', train_loss)
         print('First Iter Train loss', first_iteration_train_loss)
         print('Test loss', test_loss)
@@ -224,6 +209,7 @@ class NonCausal:
 
     def __init__(self, conf, data):
         self.channels = data.channels
+        assert data.channels == 1
         self.height = data.height
         self.width = data.width
         self.values = data.values
@@ -233,9 +219,8 @@ class NonCausal:
         self.features = conf.features
         self.end_features = conf.end_features
         self.layers = conf.layers
-        self.conditioning = conf.conditioning
         self.temperature = conf.temperature
-        self.epochs = conf.epochs
+        self.iterations = conf.iterations
         self.learning_rate = conf.learning_rate
         self.restore = conf.restore
         
@@ -247,9 +232,6 @@ class NonCausal:
         self.X_in = tf.placeholder(tf.float32, [None,self.height,self.width,self.channels])
         self.batch_size = tf.shape(self.X_in)[0]
         self.X_true = tf.placeholder(tf.float32, [None,self.height,self.width,self.channels])
-        self.y_raw = tf.placeholder(tf.int32, [None])
-        self.y = tf.reshape(self.y_raw, shape=[self.batch_size, 1, 1])
-        self.y = tf.stop_gradient(tf.one_hot(self.y, self.labels))
         train_logits, test_logits, test_predictions = self.noncausal()
         self.train_loss = self.compute_train_loss(train_logits, self.X_true)
         self.first_iteration_train_loss = self.compute_train_loss(train_logits[:1], self.X_true)

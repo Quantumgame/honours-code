@@ -28,16 +28,6 @@ class PixelCNN:
         if bias:
             out += get_bias_weights([out_features])
         return out
-        
-    def apply_conditioning(self, out_features):
-        if self.conditioning == 'none':
-            return tf.zeros([self.batch_size, self.height, self.width, out_features])
-        elif self.conditioning == 'generic':
-            return tf.tile(tf.reshape(self.fully_connected(self.y, self.labels, out_features), shape=[self.batch_size, 1, 1, out_features]), [1, self.height, self.width, 1])
-        elif self.conditioning == 'localised':
-            return tf.reshape(self.fully_connected(self.y, self.labels, self.height * self.width * out_features), shape=[self.batch_size, self.height, self.width, out_features])
-        else:
-            assert False
             
     def shift_up(self, v):
         return tf.pad(v, [[0,0],[1,0],[0, 0],[0,0]])[:,:-1,:,:]
@@ -49,23 +39,21 @@ class PixelCNN:
         assert not (first_layer and last_layer)
         assert self.filter_size % 2 == 1
 
-        v_cond = self.apply_conditioning(2*self.features)
         v_conv = self.padded_conv2d(v_in,
             [self.filter_size-1, self.filter_size, self.channels if first_layer else self.features, 2*self.features],
             [[0,0],[self.filter_size-2,0],[self.filter_size//2, self.filter_size//2],[0,0]]
         )
-        v_out = self.gate(v_conv + v_cond)
+        v_out = self.gate(v_conv)
         
         if first_layer:
             h_in = self.shift_left(h_in) # TODO: encode dependencies among channels for the same pixel
 
-        h_cond = self.apply_conditioning(2*self.features)
         v_cross = self.fully_connected(self.shift_up(v_conv), 2*self.features, 2*self.features)
         h_conv = self.padded_conv2d(h_in,
             [1, self.filter_size, self.channels if first_layer else self.features, 2*self.features],
             [[0,0],[0,0],[self.filter_size-1, 0],[0,0]]
         )
-        h_out = self.gate(h_conv + v_cross + h_cond)
+        h_out = self.gate(h_conv + v_cross)
         
         residual = self.fully_connected(h_out, self.features, self.end_features if last_layer else self.features)
         skip = self.fully_connected(h_out, self.features, self.end_features)
@@ -78,8 +66,6 @@ class PixelCNN:
         return v_out, h_in + residual, skip
         
     def end(self, outs):
-        condition = self.apply_conditioning(self.end_features)
-        outs.append(condition)
         out = tf.nn.relu(tf.reduce_sum(outs, 0))
         out = tf.nn.relu(self.fully_connected(out, self.end_features, self.end_features))
         out = self.fully_connected(out, self.end_features, self.channels * self.values)
@@ -109,12 +95,11 @@ class PixelCNN:
         horz_samples = 10
         vert_samples = 10
         samples = np.zeros((horz_samples*vert_samples, self.height, self.width, self.channels), dtype=np.float32)
-        conditions = [i // horz_samples for i in range(horz_samples*vert_samples)]
 
         for i in range(self.height):
             for j in range(self.width):
                 print(i,j)
-                predictions = sess.run(self.predictions, feed_dict={self.X:samples, self.y_raw:conditions})
+                predictions = sess.run(self.predictions, feed_dict={self.X:samples})
                 samples[:, i, j, :] = predictions[:, i, j, :]
 
         images = samples.reshape((vert_samples, horz_samples, self.height, self.width))
@@ -147,23 +132,23 @@ class PixelCNN:
                 sess.run(tf.global_variables_initializer())
             global_step = sess.run(self.global_step)
             print("Started Model Training...")
-            while global_step < self.epochs:
-              #print('running', global_step, self.epochs)
-              X, y = sess.run(train_data)
-              train_summary, _, _ = sess.run([self.train_summary, self.loss, self.train_step], feed_dict={self.X:X, self.y_raw:y})
+            while global_step < self.iterations:
+              #print('running', global_step, self.iterations)
+              X, _ = sess.run(train_data)
+              train_summary, _, _ = sess.run([self.train_summary, self.loss, self.train_step], feed_dict={self.X:X})
               summary_writer.add_summary(train_summary, global_step)
               global_step = sess.run(self.global_step)
 
-              if global_step%1000 == 0 or global_step == self.epochs:
+              if global_step%1000 == 0 or global_step == self.iterations:
                 saver.save(sess, 'ckpts/pixelcnn.ckpt', global_step=global_step)
                 sess.run([self.reset_loss_mean])
                 for i in range(200):
-                    X, y = sess.run(test_data)
-                    sess.run([self.update_loss_mean], feed_dict={self.X:X, self.y_raw:y})
+                    X, _ = sess.run(test_data)
+                    sess.run([self.update_loss_mean], feed_dict={self.X:X})
                     
-                test_summary, test_loss = sess.run([self.test_summary, self.loss_mean], feed_dict={self.X:X, self.y_raw:y})
+                test_summary, test_loss = sess.run([self.test_summary, self.loss_mean], feed_dict={self.X:X})
                 summary_writer.add_summary(test_summary, global_step)
-                print("epoch %d, test loss %g"%(global_step, test_loss))
+                print("iteration %d, test loss %g"%(global_step, test_loss))
               
               
     def run_tests(self):
@@ -177,7 +162,6 @@ class PixelCNN:
         data_length = int(np.ceil(data_length / batch_size) * batch_size)
         data = np.zeros((data_length, self.height, self.width, self.channels))
         answer = np.zeros((data_length, self.height, self.width, self.channels))
-        conditions = [0]*(batch_size)
         for y in range(self.height):
             for x in range(self.width):
                 for c in range(self.channels):
@@ -193,7 +177,7 @@ class PixelCNN:
             for batch in range(data_length//batch_size):
                 X = data[batch:batch+batch_size,:,:,:]
                 y = answer[batch:batch+batch_size,:,:,:]
-                predictions = sess.run(self.predictions, feed_dict={self.X:X, self.y_raw:conditions})
+                predictions = sess.run(self.predictions, feed_dict={self.X:X})
                 # weirdly tf.multinomial outputs n+1 if one of the inputs is nan:
                 if np.all((predictions==self.values) == np.isnan(y)):
                     print('Success')
@@ -208,6 +192,7 @@ class PixelCNN:
             
     def __init__(self, conf, data):
         self.channels = data.channels
+        assert data.channels == 1
         self.height = data.height
         self.width = data.width
         self.values = data.values
@@ -217,9 +202,8 @@ class PixelCNN:
         self.features = conf.features
         self.end_features = conf.end_features
         self.layers = conf.layers
-        self.conditioning = conf.conditioning
         self.temperature = conf.temperature
-        self.epochs = conf.epochs
+        self.iterations = conf.iterations
         self.learning_rate = conf.learning_rate
         self.restore = conf.restore
         
@@ -227,9 +211,6 @@ class PixelCNN:
         
         self.X = tf.placeholder(tf.float32, [None,self.height,self.width,self.channels])
         self.batch_size = tf.shape(self.X)[0]
-        self.y_raw = tf.placeholder(tf.int32, [None])
-        self.y = tf.reshape(self.y_raw, shape=[self.batch_size, 1, 1])
-        self.y = tf.stop_gradient(tf.one_hot(self.y, self.labels))
         logits, predictions = self.pixelcnn()
         self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self.logitise(self.X)))
         self.train_summary = tf.summary.scalar('train_loss', self.loss)

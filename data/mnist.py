@@ -18,7 +18,6 @@ import tensorflow as tf
 
 
 def download(directory, filename):
-  """Download (and unzip) a file from the MNIST dataset if not already done."""
   filepath = os.path.join(directory, filename)
   if tf.gfile.Exists(filepath):
     return filepath
@@ -26,8 +25,6 @@ def download(directory, filename):
 
 
 def dataset(directory, images_file, labels_file):
-  """Download and parse MNIST dataset."""
-
   images_file = download(directory, images_file)
   labels_file = download(directory, labels_file)
 
