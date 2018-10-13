@@ -44,7 +44,7 @@ def concat_datasets(ds):
 num_corruptions = 5
 
 class Dataset:
-    def __init__(self, conf):
+    def __init__(self, conf, only_plain=False):
         images, labels = mnist.train()
         test_images, test_labels = mnist.test()
         self.values = 2
@@ -61,6 +61,9 @@ class Dataset:
         self.plain_data = tf.data.Dataset.zip((images, labels)).repeat().batch(conf.batch_size)
         
         self.plain_test_data = tf.data.Dataset.zip((test_images, test_labels)).repeat().batch(self.test_batch)
+        
+        if only_plain:
+            return
         
         self.corrupted_data = tf.data.Dataset.zip((images, labels)).repeat().flat_map(lambda image, label: self.make_corrupted_data(image, label, conf)).batch(conf.batch_size)
         

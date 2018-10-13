@@ -12,7 +12,7 @@ if __name__ == "__main__":
     parser.add_argument('--test', action='store_true', help='run unit tests instead of training model')
     parser.add_argument('--restore', action='store_true', help='restore from checkpoint (must exist)')
     parser.add_argument('--samples', action='store_true', help='generate samples from trained model')
-    parser.add_argument('--model', type=str, choices=['pixelcnn', 'noncausal'], required=True)
+    parser.add_argument('--model', type=str, choices=['pixelcnn', 'noncausal', 'evaluate'], required=True)
     parser.add_argument('--layers', type=int, default=15, help='number of convolutional layers')
     parser.add_argument('--features', type=int, default=16, help='number of convolutional filters per layer')
     parser.add_argument('--end_features', type=int, default=64, help='number of features in the final fully-connected layer') 
