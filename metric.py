@@ -3,6 +3,9 @@ from collections import namedtuple
 
 from data.dataset import Dataset
 
+import scipy
+import numpy as np
+
 def get_metric(real, fakes):
     print('computing MMD metric')
     real, fakes = get_feature_vectors(real, fakes)
@@ -18,23 +21,23 @@ def compute_score(real, fake):
     return mmd(Mxx, Mxy, Myy)
 
 def squared_dist(A, B):
-  """ https://stackoverflow.com/a/51186660 """
-  assert A.shape.as_list() == B.shape.as_list()
+  #assert A.shape == B.shape
+  return scipy.spatial.distance.cdist(A,B,'sqeuclidean')
 
-  row_norms_A = tf.reduce_sum(tf.square(A), axis=1)
-  row_norms_A = tf.reshape(row_norms_A, [-1, 1])  # Column vector.
+  #row_norms_A = tf.reduce_sum(tf.square(A), axis=1)
+  #row_norms_A = tf.reshape(row_norms_A, [-1, 1])  # Column vector.
 
-  row_norms_B = tf.reduce_sum(tf.square(B), axis=1)
-  row_norms_B = tf.reshape(row_norms_B, [1, -1])  # Row vector.
+  #row_norms_B = tf.reduce_sum(tf.square(B), axis=1)
+  #row_norms_B = tf.reshape(row_norms_B, [1, -1])  # Row vector.
 
-  return row_norms_A + row_norms_B - 2 * tf.matmul(A, tf.transpose(B))
+  #return row_norms_A + row_norms_B - 2 * tf.matmul(A, tf.transpose(B))
 
 def mmd(Mxx, Mxy, Myy, sigma=1):
-    scale = tf.reduce_mean(Mxx)
-    Mxx = tf.math.exp(-Mxx / (scale * 2 * sigma * sigma))
-    Mxy = tf.math.exp(-Mxy / (scale * 2 * sigma * sigma))
-    Myy = tf.math.exp(-Myy / (scale * 2 * sigma * sigma))
-    mmd = tf.sqrt(tf.reduce_mean(Mxx) + tf.reduce_mean(Myy) - 2 * tf.reduce_mean(Mxy))
+    scale = np.mean(Mxx)
+    Mxx = np.exp(-Mxx / (scale * 2 * sigma * sigma))
+    Mxy = np.exp(-Mxy / (scale * 2 * sigma * sigma))
+    Myy = np.exp(-Myy / (scale * 2 * sigma * sigma))
+    mmd = np.sqrt(np.mean(Mxx) + np.mean(Myy) - 2 * np.mean(Mxy))
     return mmd
 
     
@@ -74,14 +77,22 @@ def get_feature_vectors(real, fakes):
   cross_entropy = tf.reduce_mean(tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits))
   train_step = tf.train.AdamOptimizer(1e-4).minimize(cross_entropy)
 
+  
+  saver = tf.train.Saver()
   with tf.Session() as sess:
-    sess.run(tf.global_variables_initializer())
-    print('training classifier')
-    for i in range(20):#000):
-      X, y = sess.run(train_data)
-      train_step.run(feed_dict={input: X, labels: y, keep_prob: 0.5})
-      if i % 100 == 0:
-        print(' iteration', i, 'of', 20000)
+    ckpt = tf.train.get_checkpoint_state('ckpts', latest_filename='metric')
+    if ckpt and ckpt.model_checkpoint_path:
+        print('restoring classifier')
+        saver.restore(sess, ckpt.model_checkpoint_path)
+    else:
+        sess.run(tf.global_variables_initializer())
+        print('training classifier')
+        for i in range(20):#000):
+          X, y = sess.run(train_data)
+          train_step.run(feed_dict={input: X, labels: y, keep_prob: 0.5})
+          if i % 100 == 0:
+            print(' iteration', i, 'of', 20000)
+        saver.save(sess, 'ckpts/metric.ckpt', latest_filename='metric')
     print('evaluating feature vectors')
     real = feature_vectors.eval(feed_dict={input: real})
     fakes = [feature_vectors.eval(feed_dict={input: fake}) for fake in fakes]

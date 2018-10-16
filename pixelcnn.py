@@ -72,7 +72,7 @@ class PixelCNN:
         return tf.reshape(out, shape=[self.batch_size, self.height, self.width, self.channels, self.values])
 
     def pixelcnn(self):
-        v, h = self.X, self.X
+        v, h = self.X_in, self.X_in
         outs = []
         for i in range(self.layers):
             v, h, skip = self.layer(v, h, first_layer=(i == 0), last_layer=(i==self.layers-1))
@@ -85,48 +85,131 @@ class PixelCNN:
         
     def sample(self, logits):
         probabilities = logits / self.temperature
-        return tf.reshape(tf.multinomial(tf.reshape(probabilities, shape=[self.batch_size*self.height*self.width*self.channels, self.values]), 1), shape=[self.batch_size,self.height,self.width,self.channels])
+        return tf.reshape(tf.cast(tf.multinomial(tf.reshape(probabilities, shape=[self.batch_size*self.height*self.width*self.channels, self.values]), 1), tf.float32), shape=[self.batch_size,self.height,self.width,self.channels])
         
     def logitise(self, images):
         return tf.stop_gradient(tf.one_hot(tf.to_int32(images * (self.values-1)), self.values))
         
+    def generate_ten_thousand_samples(self, sess):
+        if self.denoising:
+            print('Generating 10000 samples for denoising')
+            start = time.clock()
+            samples = []
+            test_data = self.data.get_noise_values()
+            for _ in range(self.data.total_test_batches):
+                X_corrupted = sess.run(test_data)
+                for _ in range(self.test_iterations):
+                    X_corrupted = sess.run([self.predictions], feed_dict={self.X_in:X_corrupted})
+                samples.append(X_corrupted)
+            samples = np.concatenate(samples)
+            print(time.clock() - start)
+            return samples
+        else:
+            print('Generating 10000 samples for pixelcnn')
+            start = time.clock()
+            sampless = []
+            for _ in range(10000//100):
+                samples = np.zeros((100, self.height, self.width, self.channels), dtype=np.float32)
+                for i in range(self.height):
+                    for j in range(self.width):
+                        #print(i,j)
+                        predictions = sess.run([self.predictions], feed_dict={self.X_in:samples})
+                        samples[:, i, j, :] = predictions[:, i, j, :]
+                sampless.append(samples)
+            samples = np.concatenate(sampless)
+            print(time.clock() - start)
+            return samples
+        
+
+            
+        
+    def generate_one_group_of_samples(self, sess, filename, X_corrupted, X_true=None, horz_samples=100):
+        print('Generating samples for', filename)
+        X_corrupted = X_corrupted[:horz_samples,:,:,:]
+        predictions = [X_true] if X_true is not None else []
+        predictions.append(X_corrupted)
+        
+        start = time.clock()
+        for _ in range(self.test_iterations):
+            X_corrupted = sess.run([self.predictions], feed_dict={self.X_in:X_corrupted})
+            predictions.append(X_corrupted)
+        print(time.clock() - start)
+        
+        predictions = tuple(p.reshape((horz_samples, 1, self.height, self.width)) for p in predictions)
+        images = np.concatenate(predictions, axis=1)
+        images = images.transpose(1, 2, 0, 3)
+        images = images.reshape((self.height * (self.test_iterations + 1), self.width * horz_samples))
+        
+        filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M_noncausal_' + filename)+".png"
+        Image.fromarray((images*255).astype(np.int32)).convert('RGB').save(filename)
+        
     def generate_samples(self, sess):
         print("Generating Sample Images...")
-        horz_samples = 10
-        vert_samples = 10
-        samples = np.zeros((horz_samples*vert_samples, self.height, self.width, self.channels), dtype=np.float32)
+        if self.denoising:
+            X_corrupted, X_true, _ = sess.run(self.data.get_denoising_values())
+            images = self.generate_one_group_of_samples(self, sess, 'denoise', X_corrupted, X_true)
 
-        for i in range(self.height):
-            for j in range(self.width):
-                print(i,j)
-                predictions = sess.run(self.predictions, feed_dict={self.X:samples})
-                samples[:, i, j, :] = predictions[:, i, j, :]
+            X_corrupted, X_true, _ = sess.run(self.data.get_topgap_values())
+            images = self.generate_one_group_of_samples(self, sess, 'topgap', X_corrupted, X_true)
+            
+            X_corrupted, X_true, _ = sess.run(self.data.get_bottomgap_values())
+            images = self.generate_one_group_of_samples(self, sess, 'bottomgap', X_corrupted, X_true)
+            
+            X_corrupted = sess.run(self.data.get_noise_values())
+            images = self.generate_one_group_of_samples(self, sess, 'purenoise', X_corrupted)
+        else:
+            horz_samples = 10
+            vert_samples = 10
+            samples = np.zeros((horz_samples*vert_samples, self.height, self.width, self.channels), dtype=np.float32)
 
-        images = samples.reshape((vert_samples, horz_samples, self.height, self.width))
-        images = images.transpose(0, 2, 1, 3)
-        images = images.reshape((self.height * vert_samples, self.width * horz_samples)) #TODO: support more than one channel
+            start = time.clock()
+            for i in range(self.height):
+                for j in range(self.width):
+                    #print(i,j)
+                    predictions = sess.run([self.predictions], feed_dict={self.X_in:samples})
+                    samples[:, i, j, :] = predictions[:, i, j, :]
+            print(time.clock() - start)
 
-        filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M')+".png"
-        Image.fromarray((images*255).astype(np.int32)).convert('RGB').save(filename)
+            images = samples.reshape((vert_samples, horz_samples, self.height, self.width))
+            images = images.transpose(0, 2, 1, 3)
+            images = images.reshape((self.height * vert_samples, self.width * horz_samples))
+
+            filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M_pixelcnn')+".png"
+            Image.fromarray((images*255).astype(np.int32)).convert('RGB').save(filename)
         
     def samples(self):
         assert self.restore
         saver = tf.train.Saver()
         with tf.Session() as sess: 
-            ckpt = tf.train.get_checkpoint_state('ckpts')
+            ckpt = tf.train.get_checkpoint_state('ckpts', latest_filename=self.save_file_name)
             saver.restore(sess, ckpt.model_checkpoint_path)
             self.generate_samples(sess)
+            
+    def get_test_samples(self):
+        assert self.restore
+        saver = tf.train.Saver()
+
+        with tf.Session() as sess: 
+            ckpt = tf.train.get_checkpoint_state('ckpts', latest_filename='noncausal')
+            saver.restore(sess, ckpt.model_checkpoint_path)
+            return self.generate_ten_thousand_samples(sess)
         
     def run(self):
         saver = tf.train.Saver()
-        train_data = self.data.get_plain_values()
-        test_data = self.data.get_plain_test_values()
+        if self.denoising:
+            train_data = self.data.get_corrupted_values()
+            test_data = self.data.get_corrupted_test_values()
+        else:
+            X, y = self.data.get_plain_values()
+            train_data = (X,X,y,self.data.get_plain_proportions())
+            X, y = self.data.get_plain_test_values()
+            test_data = (X,X,y,self.data.get_plain_proportions_test())
         
-        summary_writer = tf.summary.FileWriter('logs/pixelcnn')
+        summary_writer = tf.summary.FileWriter('logs/' + self.save_file_name)
 
         with tf.Session() as sess: 
             if self.restore:
-                ckpt = tf.train.get_checkpoint_state('ckpts')
+                ckpt = tf.train.get_checkpoint_state('ckpts', latest_filename=self.save_file_name)
                 saver.restore(sess, ckpt.model_checkpoint_path)
             else:
                 sess.run(tf.global_variables_initializer())
@@ -134,24 +217,44 @@ class PixelCNN:
             print("Started Model Training...")
             while global_step < self.iterations:
               #print('running', global_step, self.iterations)
-              X, _ = sess.run(train_data)
-              train_summary, _, _ = sess.run([self.train_summary, self.loss, self.train_step], feed_dict={self.X:X})
+              X_corrupted, X_true, _ = sess.run(train_data)
+              predictions, train_summary, _, _ = sess.run([self.predictions, self.train_summary, self.loss, self.train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.proportion:proportion})
               summary_writer.add_summary(train_summary, global_step)
               global_step = sess.run(self.global_step)
+              
+              if self.denoising:
+                  train_summary, _, _ = sess.run([self.train_summary, self.loss, self.train_step], feed_dict={self.X_in:predictions, self.X_true:X_true, self.proportion:proportion})
+                  summary_writer.add_summary(train_summary, global_step)
+                  global_step = sess.run(self.global_step)
 
-              if global_step%1000 == 0 or global_step == self.iterations:
-                saver.save(sess, 'ckpts/pixelcnn.ckpt', global_step=global_step)
+              if global_step%1000 == 0 or global_step >= self.iterations:
+                saver.save(sess, 'ckpts/' + self.save_file_name + '.ckpt', global_step=global_step, latest_filename=self.save_file_name)
                 sess.run([self.reset_loss_mean])
-                for i in range(200):
-                    X, _ = sess.run(test_data)
-                    sess.run([self.update_loss_mean], feed_dict={self.X:X})
+
+                for i in range(self.data.total_test_batches):
+                    X_corrupted, X_true, _ = sess.run(test_data)
+                    predictions, _ = sess.run([self.predictions, self.update_loss_mean], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.proportion:proportion})
+                    if self.denoising:
+                        sess.run([self.update_loss_mean], feed_dict={self.X_in:predictions, self.X_true:X_true, self.proportion:proportion})
                     
-                test_summary, test_loss = sess.run([self.test_summary, self.loss_mean], feed_dict={self.X:X})
+                test_summary, test_loss = sess.run([self.test_summary, self.loss_mean])
                 summary_writer.add_summary(test_summary, global_step)
+                
                 print("iteration %d, test loss %g"%(global_step, test_loss))
               
               
     def run_tests(self):
+        print('PixelCNN basic test:')
+        train_data = self.data.get_corrupted_values()
+        with tf.Session() as sess:
+            sess.run(tf.global_variables_initializer())
+            X_corrupted, X_true, _, proportion = sess.run(train_data)
+            loss, predictions, _ = sess.run([self.loss, self.predictions, self.train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.proportion:proportion})
+            
+        print('Loss', loss)
+        print('Predictions', [p.shape for p in predictions])
+        print('Test completed')
+    
         import matplotlib.pyplot as plt
         print('PixelCNN causality test:')
         batch_size = 1
@@ -177,7 +280,7 @@ class PixelCNN:
             for batch in range(data_length//batch_size):
                 X = data[batch:batch+batch_size,:,:,:]
                 y = answer[batch:batch+batch_size,:,:,:]
-                predictions = sess.run(self.predictions, feed_dict={self.X:X})
+                predictions = sess.run(self.predictions, feed_dict={self.X_in:X})
                 # weirdly tf.multinomial outputs n+1 if one of the inputs is nan:
                 if np.all((predictions==self.values) == np.isnan(y)):
                     print('Success')
@@ -190,7 +293,7 @@ class PixelCNN:
                     plt.imshow(np.isnan(y)[0,:,:,0])
                     plt.show()
             
-    def __init__(self, conf, data):
+    def __init__(self, conf, data, denoising):
         self.channels = data.channels
         assert data.channels == 1
         self.height = data.height
@@ -207,12 +310,19 @@ class PixelCNN:
         self.learning_rate = conf.learning_rate
         self.restore = conf.restore
         
+        self.test_iterations = conf.test_iterations
+        
+        self.denoising = denoising
+        self.save_file_name = 'denoising' if self.denoising else 'pixelcnn'
+        
         self.global_step = tf.Variable(0, trainable=False)
         
-        self.X = tf.placeholder(tf.float32, [None,self.height,self.width,self.channels])
-        self.batch_size = tf.shape(self.X)[0]
-        logits, predictions = self.pixelcnn()
-        self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self.logitise(self.X)))
+        self.X_in = tf.placeholder(tf.float32, [None,self.height,self.width,self.channels])
+        self.batch_size = tf.shape(self.X_in)[0]
+        self.X_true = tf.placeholder(tf.float32, [None,self.height,self.width,self.channels])
+        self.proportion = tf.placeholder(tf.float32, [None])
+        logits, self.predictions = self.pixelcnn()
+        self.loss = tf.reduce_mean((1/self.proportion) * tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self.logitise(self.X_true)))
         self.train_summary = tf.summary.scalar('train_loss', self.loss)
         with tf.name_scope('loss_mean_calc'):
             self.loss_mean, self.update_loss_mean = tf.metrics.mean(self.loss)
@@ -221,7 +331,6 @@ class PixelCNN:
         self.reset_loss_mean = tf.initialize_variables([i for i in tf.local_variables() if 'loss_mean_calc' in i.name])
         
         self.train_step = tf.train.RMSPropOptimizer(self.learning_rate).minimize(self.loss, global_step=self.global_step)
-        self.predictions = predictions
         
         print('trainable variables:', np.sum([np.prod(v.get_shape().as_list()) for v in tf.trainable_variables()]))
 
