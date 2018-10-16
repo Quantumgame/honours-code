@@ -46,8 +46,8 @@ def get_bias_weights(shape):
   
 def conv2d(input, shape):
     assert len(shape) == 4
-    W = get_weights('W', shape)
-    b = get_bias_weights('b', shape[-1])
+    W = get_weights(shape)
+    b = get_bias_weights([shape[-1]])
     return tf.nn.conv2d(input, W, strides=[1, 1, 1, 1], padding='SAME') + b
 
 def max_pool_2x2(x):
@@ -77,10 +77,10 @@ def get_feature_vectors(real, fakes):
   with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
     print('training classifier')
-    for i in range(20000):
+    for i in range(20):#000):
       X, y = sess.run(train_data)
       train_step.run(feed_dict={input: X, labels: y, keep_prob: 0.5})
-      if i % 1000 == 0:
+      if i % 100 == 0:
         print(' iteration', i, 'of', 20000)
     print('evaluating feature vectors')
     real = feature_vectors.eval(feed_dict={input: real})

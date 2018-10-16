@@ -5,6 +5,7 @@ import tensorflow as tf
 from data.dataset import Dataset
 from pixelcnn import PixelCNN
 from noncausal import NonCausal
+from metric import get_metric
   
 
 if __name__ == "__main__":
@@ -32,12 +33,18 @@ if __name__ == "__main__":
     
     # for quick test use python .\main.py --layers 3 --features 5 --end_features 10 --iterations 101 --batch_size 6 --model pixelcnn
     
-    data = Dataset(conf)
-    model = PixelCNN(conf, data) if conf.model == 'pixelcnn' else NonCausal(conf, data)
-    
-    if conf.test:
-        model.run_tests()
-    elif conf.samples:
-        model.samples()
+    if conf.model == 'evaluate':
+        test_data = Dataset(conf).get_plain_test_values_full()
+        with tf.Session() as sess: 
+            X, _ = sess.run(test_data)
+        get_metric(X, [X])
     else:
-        model.run()
+        data = Dataset(conf)
+        model = PixelCNN(conf, data) if conf.model == 'pixelcnn' else NonCausal(conf, data)
+        
+        if conf.test:
+            model.run_tests()
+        elif conf.samples:
+            model.samples()
+        else:
+            model.run()

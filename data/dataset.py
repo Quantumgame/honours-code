@@ -3,7 +3,6 @@ import numpy as np
 import scipy.ndimage.filters
 
 import data.mnist as mnist
-import data.imagenet as imagenet    
     
 def noise(arr, proportion, generator):
     arr = arr.copy()
@@ -61,6 +60,7 @@ class Dataset:
         self.plain_data = tf.data.Dataset.zip((images, labels)).repeat().batch(conf.batch_size)
         
         self.plain_test_data = tf.data.Dataset.zip((test_images, test_labels)).repeat().batch(self.test_batch)
+        self.plain_test_data_full = tf.data.Dataset.zip((test_images, test_labels)).batch(self.test_size)
         
         if only_plain:
             return
@@ -104,6 +104,10 @@ class Dataset:
     def get_plain_test_values(self):
         # Returns (input, label) tuples
         return self.plain_test_data.make_one_shot_iterator().get_next()
+        
+    def get_plain_test_values_full(self):
+        # Returns (input, label) tuples
+        return self.plain_test_data_full.make_one_shot_iterator().get_next()
         
     def get_corrupted_test_values(self):
         # Returns (corrupted, true, label) tuples

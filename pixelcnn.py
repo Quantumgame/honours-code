@@ -29,10 +29,10 @@ class PixelCNN:
             out += get_bias_weights([out_features])
         return out
             
-    def shift_up(self, v):
+    def shift_down(self, v):
         return tf.pad(v, [[0,0],[1,0],[0, 0],[0,0]])[:,:-1,:,:]
         
-    def shift_left(self, h):
+    def shift_right(self, h):
         return tf.pad(h, [[0,0],[0,0],[1, 0],[0,0]])[:,:,:-1,:]
 
     def layer(self, v_in, h_in, first_layer=False, last_layer=False):
@@ -46,9 +46,9 @@ class PixelCNN:
         v_out = self.gate(v_conv)
         
         if first_layer:
-            h_in = self.shift_left(h_in) # TODO: encode dependencies among channels for the same pixel
+            h_in = self.shift_right(h_in)
 
-        v_cross = self.fully_connected(self.shift_up(v_conv), 2*self.features, 2*self.features)
+        v_cross = self.fully_connected(self.shift_down(v_conv), 2*self.features, 2*self.features)
         h_conv = self.padded_conv2d(h_in,
             [1, self.filter_size, self.channels if first_layer else self.features, 2*self.features],
             [[0,0],[0,0],[self.filter_size-1, 0],[0,0]]
