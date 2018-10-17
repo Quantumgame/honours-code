@@ -217,7 +217,7 @@ class PixelCNN:
             print("Started Model Training...")
             while global_step < self.iterations:
               #print('running', global_step, self.iterations)
-              X_corrupted, X_true, _ = sess.run(train_data)
+              X_corrupted, X_true, _, proportion = sess.run(train_data)
               predictions, train_summary, _, _ = sess.run([self.predictions, self.train_summary, self.loss, self.train_step], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.proportion:proportion})
               summary_writer.add_summary(train_summary, global_step)
               global_step = sess.run(self.global_step)
@@ -232,7 +232,7 @@ class PixelCNN:
                 sess.run([self.reset_loss_mean])
 
                 for i in range(self.data.total_test_batches):
-                    X_corrupted, X_true, _ = sess.run(test_data)
+                    X_corrupted, X_true, _, proportion = sess.run(test_data)
                     predictions, _ = sess.run([self.predictions, self.update_loss_mean], feed_dict={self.X_in:X_corrupted, self.X_true:X_true, self.proportion:proportion})
                     if self.denoising:
                         sess.run([self.update_loss_mean], feed_dict={self.X_in:predictions, self.X_true:X_true, self.proportion:proportion})

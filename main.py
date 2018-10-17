@@ -25,7 +25,7 @@ if __name__ == "__main__":
     ## These options only apply to noncausal and denoising
     parser.add_argument('--min_noise_prop', type=float, default=0.05, help='Minimum proportion of pixels to replace with noise for training')
     parser.add_argument('--max_noise_prop', type=float, default=0.95, help='Maximum proportion of pixels to replace with noise for training')
-    #parser.add_argument('--train_iterations', type=int, default=2, help='How many times to apply the noncausal model to the inputs, backpropogating errors each time')
+    #parser.add_argument('--train_iterations', type=int, default=2, help='How many times to apply the noncausal model to the inputs, backpropagating errors each time')
     parser.add_argument('--test_iterations', type=int, default=20, help='When generating samples, how many times to apply the noncausal and denoising models to the inputs')
     conf = parser.parse_args()
     

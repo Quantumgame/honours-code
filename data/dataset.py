@@ -9,7 +9,7 @@ def noise(arr, min_prop, max_prop):
     proportion = min_prop + np.random.random() * (max_prop - min_prop)
     mask = np.random.random(size=arr.shape[:-1]) < proportion
     arr[mask] = mnist_noise(arr.shape)[mask,:]
-    return arr, proportion
+    return arr, np.float32(proportion)
     
 def noise_top(arr):
     arr = arr.copy()
@@ -57,8 +57,8 @@ class Dataset:
         self.topgap_test_data = tf.data.Dataset.zip((test_images, test_labels)).repeat().map(lambda image, label: self.make_topgap_data(image, label, conf)).batch(self.test_batch)
         self.bottomgap_test_data = tf.data.Dataset.zip((test_images, test_labels)).repeat().map(lambda image, label: self.make_bottomgap_data(image, label, conf)).batch(self.test_batch)
         
-        self.plain_proportions = Dataset.range(1, 2).repeat().batch(conf.batch_size)
-        self.plain_proportions_test = Dataset.range(1, 2).repeat().batch(self.test_size)
+        self.plain_proportions = tf.data.Dataset.range(1, 2).repeat().batch(conf.batch_size)
+        self.plain_proportions_test = tf.data.Dataset.range(1, 2).repeat().batch(self.test_size)
         
     def make_corrupted_data(self, image, label, conf):    
         corrupted, proportion = tf.py_func(lambda arr: noise(arr, conf.min_noise_prop, conf.max_noise_prop), [image], [tf.float32, tf.float32])
