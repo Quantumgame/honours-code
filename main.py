@@ -1,6 +1,7 @@
 import argparse
 
 import tensorflow as tf
+import numpy as np
 
 from data.dataset import Dataset
 from pixelcnn import PixelCNN
@@ -32,10 +33,15 @@ if __name__ == "__main__":
     # for quick test use python .\main.py --layers 3 --features 5 --end_features 10 --iterations 101 --batch_size 6 --model pixelcnn
     
     if conf.model == 'evaluate':
-        test_data = Dataset(conf).get_plain_test_values_full()
-        with tf.Session() as sess: 
-            X, _ = sess.run(test_data)
-        print('Getting samples from PixelCNN')
+        data = Dataset(conf)
+        test_data = data.get_plain_test_values()
+        with tf.Session() as sess:
+            samples = []
+            for _ in range(data.total_test_batches):
+                X, _ = sess.run(test_data)
+                samples.append(X)
+            X = np.concatenate(samples)
+            print(X.shape)
         X_pixelcnn = PixelCNN(conf, data, False).get_test_samples()
         X_denoising = PixelCNN(conf, data, True).get_test_samples()
         X_noncausal = NonCausal(conf, data).get_test_samples()

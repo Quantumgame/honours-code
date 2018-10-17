@@ -207,12 +207,13 @@ class PixelCNN:
         
         summary_writer = tf.summary.FileWriter('logs/' + self.save_file_name)
 
-        with tf.Session() as sess: 
+        with tf.Session() as sess:
             if self.restore:
                 ckpt = tf.train.get_checkpoint_state('ckpts', latest_filename=self.save_file_name)
                 saver.restore(sess, ckpt.model_checkpoint_path)
             else:
                 sess.run(tf.global_variables_initializer())
+            print('Started training at time', time.clock())
             global_step = sess.run(self.global_step)
             print("Started Model Training...")
             while global_step < self.iterations:
@@ -241,6 +242,7 @@ class PixelCNN:
                 summary_writer.add_summary(test_summary, global_step)
                 
                 print("iteration %d, test loss %g"%(global_step, test_loss))
+            print('Finished training at time', time.clock())
               
               
     def run_tests(self):

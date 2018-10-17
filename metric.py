@@ -87,7 +87,7 @@ def get_feature_vectors(real, fakes):
     else:
         sess.run(tf.global_variables_initializer())
         print('training classifier')
-        for i in range(20):#000):
+        for i in range(20000):
           X, y = sess.run(train_data)
           train_step.run(feed_dict={input: X, labels: y, keep_prob: 0.5})
           if i % 100 == 0:

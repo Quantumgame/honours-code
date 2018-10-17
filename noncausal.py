@@ -142,6 +142,7 @@ class NonCausal:
                 saver.restore(sess, ckpt.model_checkpoint_path)
             else:
                 sess.run(tf.global_variables_initializer())
+            print('Started training at time', time.clock())
             global_step = sess.run(self.global_step)
             print("Started Model Training...")
             while global_step < self.iterations:
@@ -168,7 +169,7 @@ class NonCausal:
                     summary_writer.add_summary(test_summary, global_step)
                   
                     print("iteration %d, test loss %g"%(global_step, test_loss))
-              
+            print('Finished training at time', time.clock())
             
     def run_tests(self):
         print('Noncausal basic test:')
