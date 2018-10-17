@@ -321,8 +321,9 @@ class PixelCNN:
         self.batch_size = tf.shape(self.X_in)[0]
         self.X_true = tf.placeholder(tf.float32, [None,self.height,self.width,self.channels])
         self.proportion = tf.placeholder(tf.float32, [None])
+        self.expanded_proportion = tf.tile(tf.expand_dims(tf.expand_dims(tf.expand_dims(tf.reciprocal(self.proportion), -1), -1), -1), [1,self.height,self.width,self.channels])
         logits, self.predictions = self.pixelcnn()
-        self.loss = tf.reduce_mean((1/self.proportion) * tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self.logitise(self.X_true)))
+        self.loss = tf.reduce_mean(tf.multiply(self.expanded_proportion, tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=self.logitise(self.X_true))))
         self.train_summary = tf.summary.scalar('train_loss', self.loss)
         with tf.name_scope('loss_mean_calc'):
             self.loss_mean, self.update_loss_mean = tf.metrics.mean(self.loss)
