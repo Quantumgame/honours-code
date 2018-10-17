@@ -4,6 +4,8 @@ import numpy as np
 from datetime import datetime
 from PIL import Image
 
+import time
+
 def get_weights(shape):
     return tf.Variable(tf.contrib.layers.xavier_initializer()(shape))
 
@@ -66,7 +68,7 @@ class NonCausal:
         
     def generate_ten_thousand_samples(self, sess):
         print('Generating 10000 samples for noncausal')
-        start = time.clock()
+        start = time.perf_counter()
         samples = []
         test_data = self.data.get_noise_values()
         for _ in range(self.data.total_test_batches):
@@ -75,7 +77,7 @@ class NonCausal:
                 X_corrupted = sess.run([self.predictions], feed_dict={self.X_in:X_corrupted})
             samples.append(X_corrupted)
         samples = np.concatenate(samples)
-        print(time.clock() - start)
+        print(time.perf_counter() - start)
         return samples
         
     def generate_one_group_of_samples(self, sess, filename, X_corrupted, X_true=None, horz_samples=100):
@@ -84,11 +86,11 @@ class NonCausal:
         predictions = [X_true] if X_true is not None else []
         predictions.append(X_corrupted)
         
-        start = time.clock()
+        start = time.perf_counter()
         for _ in range(self.test_iterations):
             X_corrupted = sess.run([self.predictions], feed_dict={self.X_in:X_corrupted})
             predictions.append(X_corrupted)
-        print(time.clock() - start)
+        print(time.perf_counter() - start)
         
         predictions = tuple(p.reshape((horz_samples, 1, self.height, self.width)) for p in predictions)
         images = np.concatenate(predictions, axis=1)
@@ -142,7 +144,8 @@ class NonCausal:
                 saver.restore(sess, ckpt.model_checkpoint_path)
             else:
                 sess.run(tf.global_variables_initializer())
-            print('Started training at time', time.clock())
+            print('Started training at time', time.perf_counter())
+            starttime = time.perf_counter()
             global_step = sess.run(self.global_step)
             print("Started Model Training...")
             while global_step < self.iterations:
@@ -169,7 +172,8 @@ class NonCausal:
                     summary_writer.add_summary(test_summary, global_step)
                   
                     print("iteration %d, test loss %g"%(global_step, test_loss))
-            print('Finished training at time', time.clock())
+            print('Finished training at time', time.perf_counter())
+            print('Time elapsed', time.perf_counter() - starttime)
             
     def run_tests(self):
         print('Noncausal basic test:')

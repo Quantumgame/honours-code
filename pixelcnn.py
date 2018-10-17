@@ -4,6 +4,8 @@ import numpy as np
 from datetime import datetime
 from PIL import Image
 
+import time
+
 def get_weights(shape):
     return tf.Variable(tf.contrib.layers.xavier_initializer()(shape))
 
@@ -93,7 +95,7 @@ class PixelCNN:
     def generate_ten_thousand_samples(self, sess):
         if self.denoising:
             print('Generating 10000 samples for denoising')
-            start = time.clock()
+            start = time.perf_counter()
             samples = []
             test_data = self.data.get_noise_values()
             for _ in range(self.data.total_test_batches):
@@ -102,11 +104,11 @@ class PixelCNN:
                     X_corrupted = sess.run([self.predictions], feed_dict={self.X_in:X_corrupted})
                 samples.append(X_corrupted)
             samples = np.concatenate(samples)
-            print(time.clock() - start)
+            print(time.perf_counter() - start)
             return samples
         else:
             print('Generating 10000 samples for pixelcnn')
-            start = time.clock()
+            start = time.perf_counter()
             sampless = []
             for _ in range(10000//100):
                 samples = np.zeros((100, self.height, self.width, self.channels), dtype=np.float32)
@@ -117,7 +119,7 @@ class PixelCNN:
                         samples[:, i, j, :] = predictions[:, i, j, :]
                 sampless.append(samples)
             samples = np.concatenate(sampless)
-            print(time.clock() - start)
+            print(time.perf_counter() - start)
             return samples
         
 
@@ -129,11 +131,11 @@ class PixelCNN:
         predictions = [X_true] if X_true is not None else []
         predictions.append(X_corrupted)
         
-        start = time.clock()
+        start = time.perf_counter()
         for _ in range(self.test_iterations):
             X_corrupted = sess.run([self.predictions], feed_dict={self.X_in:X_corrupted})
             predictions.append(X_corrupted)
-        print(time.clock() - start)
+        print(time.perf_counter() - start)
         
         predictions = tuple(p.reshape((horz_samples, 1, self.height, self.width)) for p in predictions)
         images = np.concatenate(predictions, axis=1)
@@ -162,13 +164,13 @@ class PixelCNN:
             vert_samples = 10
             samples = np.zeros((horz_samples*vert_samples, self.height, self.width, self.channels), dtype=np.float32)
 
-            start = time.clock()
+            start = time.perf_counter()
             for i in range(self.height):
                 for j in range(self.width):
-                    #print(i,j)
+                    print(i,j)
                     predictions = sess.run([self.predictions], feed_dict={self.X_in:samples})
                     samples[:, i, j, :] = predictions[:, i, j, :]
-            print(time.clock() - start)
+            print(time.perf_counter() - start)
 
             images = samples.reshape((vert_samples, horz_samples, self.height, self.width))
             images = images.transpose(0, 2, 1, 3)
@@ -213,7 +215,8 @@ class PixelCNN:
                 saver.restore(sess, ckpt.model_checkpoint_path)
             else:
                 sess.run(tf.global_variables_initializer())
-            print('Started training at time', time.clock())
+            print('Started training at time', time.perf_counter())
+            starttime = time.perf_counter()
             global_step = sess.run(self.global_step)
             print("Started Model Training...")
             while global_step < self.iterations:
@@ -242,7 +245,8 @@ class PixelCNN:
                 summary_writer.add_summary(test_summary, global_step)
                 
                 print("iteration %d, test loss %g"%(global_step, test_loss))
-            print('Finished training at time', time.clock())
+            print('Finished training at time', time.perf_counter())
+            print('Time elapsed', time.perf_counter() - starttime)
               
               
     def run_tests(self):
