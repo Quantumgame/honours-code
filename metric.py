@@ -22,6 +22,7 @@ def compute_score(real, fake):
 
 def squared_dist(A, B):
   #assert A.shape == B.shape
+  print('computing')
   return scipy.spatial.distance.cdist(A,B,'sqeuclidean')
 
   #row_norms_A = tf.reduce_sum(tf.square(A), axis=1)

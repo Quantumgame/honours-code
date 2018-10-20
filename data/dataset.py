@@ -68,11 +68,11 @@ class Dataset:
         return (corrupted, image, label)
         
     def make_topgap_data(self, image, label, conf):    
-        corrupted = tf.py_func(lambda arr: noise_top(arr), [image], [tf.float32])
+        corrupted = tf.py_func(lambda arr: noise_top(arr), [image], tf.float32)
         return (corrupted, image, label)
         
     def make_bottomgap_data(self, image, label, conf):    
-        corrupted = tf.py_func(lambda arr: noise_bottom(arr), [image], [tf.float32])
+        corrupted = tf.py_func(lambda arr: noise_bottom(arr), [image], tf.float32)
         return (corrupted, image, label)
         
     def make_noise_data(self, image, label, conf):

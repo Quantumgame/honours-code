@@ -66,52 +66,82 @@ class NonCausal:
     def logitise(self, images):
         return tf.stop_gradient(tf.one_hot(tf.to_int32(images * (self.values-1)), self.values))
         
+    def generate_ten_thousand_samples_graph(self, sess):
+        print('Generating graph for noncausal')
+        outer_samples = []
+        test_data = self.data.get_noise_values()
+        for b in range(self.data.total_test_batches):
+            print('batch', b)
+            inner_samples = []
+            X_corrupted = sess.run(test_data)
+            inner_samples.append(X_corrupted)
+            for _ in range(40):#self.test_iterations):
+                X_corrupted = sess.run(self.predictions, feed_dict={self.X_in:X_corrupted})
+                inner_samples.append(X_corrupted)
+            outer_samples.append(inner_samples)
+        samples = np.concatenate(outer_samples, 1)
+        print(samples.shape)
+        return samples
+        
     def generate_ten_thousand_samples(self, sess):
+        from data.dataset import noise
         print('Generating 10000 samples for noncausal')
         start = time.perf_counter()
         samples = []
         test_data = self.data.get_noise_values()
-        for _ in range(self.data.total_test_batches):
+        for j in range(self.data.total_test_batches):
+            print('batch', j)
             X_corrupted = sess.run(test_data)
-            for _ in range(self.test_iterations):
-                X_corrupted = sess.run([self.predictions], feed_dict={self.X_in:X_corrupted})
+            for i in range(self.test_iterations):
+                X_corrupted = sess.run(self.predictions, feed_dict={self.X_in:X_corrupted})
+                if self.markov_type == 'renoise_per_two':
+                    X_corrupted = sess.run(self.predictions, feed_dict={self.X_in:X_corrupted})
+                if self.markov_type != 'only_denoise':
+                    noise_prop = (self.test_iterations - i - 1) / self.test_iterations
+                    X_corrupted = np.array([noise(arr, noise_prop, noise_prop)[0] for arr in X_corrupted])
             samples.append(X_corrupted)
         samples = np.concatenate(samples)
         print(time.perf_counter() - start)
         return samples
         
     def generate_one_group_of_samples(self, sess, filename, X_corrupted, X_true=None, horz_samples=100):
+        from data.dataset import noise
         print('Generating samples for', filename)
         X_corrupted = X_corrupted[:horz_samples,:,:,:]
         predictions = [X_true] if X_true is not None else []
         predictions.append(X_corrupted)
         
         start = time.perf_counter()
-        for _ in range(self.test_iterations):
-            X_corrupted = sess.run([self.predictions], feed_dict={self.X_in:X_corrupted})
+        for i in range(self.test_iterations):
+            X_corrupted = sess.run(self.predictions, feed_dict={self.X_in:X_corrupted})
+            if self.markov_type == 'renoise_per_two':
+                X_corrupted = sess.run(self.predictions, feed_dict={self.X_in:X_corrupted})
             predictions.append(X_corrupted)
+            if self.markov_type != 'only_denoise':
+                noise_prop = (self.test_iterations - i - 1) / self.test_iterations
+                X_corrupted = np.array([noise(arr, noise_prop, noise_prop)[0] for arr in X_corrupted])
         print(time.perf_counter() - start)
         
         predictions = tuple(p.reshape((horz_samples, 1, self.height, self.width)) for p in predictions)
         images = np.concatenate(predictions, axis=1)
         images = images.transpose(1, 2, 0, 3)
-        images = images.reshape((self.height * (self.test_iterations + 1), self.width * horz_samples))
+        images = images.reshape((self.height * (self.test_iterations + 1 + (1 if X_true is not None else 0)), self.width * horz_samples))
         
         filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M_noncausal_' + filename)+".png"
         Image.fromarray((images*255).astype(np.int32)).convert('RGB').save(filename)
         
     def generate_samples(self, sess):
-        X_corrupted, X_true, _ = sess.run(self.data.get_denoising_values())
-        images = self.generate_one_group_of_samples(self, sess, 'denoise', X_corrupted, X_true)
+        #X_corrupted, X_true, _ = sess.run(self.data.get_denoising_values())
+        #images = self.generate_one_group_of_samples(sess, 'denoise', X_corrupted, X_true)
 
-        X_corrupted, X_true, _ = sess.run(self.data.get_topgap_values())
-        images = self.generate_one_group_of_samples(self, sess, 'topgap', X_corrupted, X_true)
+        #X_corrupted, X_true, _ = sess.run(self.data.get_topgap_values())
+        #images = self.generate_one_group_of_samples(sess, 'topgap', X_corrupted, X_true)
         
-        X_corrupted, X_true, _ = sess.run(self.data.get_bottomgap_values())
-        images = self.generate_one_group_of_samples(self, sess, 'bottomgap', X_corrupted, X_true)
+        #X_corrupted, X_true, _ = sess.run(self.data.get_bottomgap_values())
+        #images = self.generate_one_group_of_samples(sess, 'bottomgap', X_corrupted, X_true)
         
         X_corrupted = sess.run(self.data.get_noise_values())
-        images = self.generate_one_group_of_samples(self, sess, 'purenoise', X_corrupted)
+        images = self.generate_one_group_of_samples(sess, 'purenoise', X_corrupted)
         
         
     def samples(self):
@@ -130,6 +160,15 @@ class NonCausal:
             ckpt = tf.train.get_checkpoint_state('ckpts', latest_filename='noncausal')
             saver.restore(sess, ckpt.model_checkpoint_path)
             return self.generate_ten_thousand_samples(sess)
+            
+    def get_test_samples_graph(self):
+        assert self.restore
+        saver = tf.train.Saver()
+
+        with tf.Session() as sess: 
+            ckpt = tf.train.get_checkpoint_state('ckpts', latest_filename='noncausal')
+            saver.restore(sess, ckpt.model_checkpoint_path)
+            return self.generate_ten_thousand_samples_graph(sess)
 
     def run(self):
         saver = tf.train.Saver()
@@ -203,6 +242,7 @@ class NonCausal:
         self.iterations = conf.iterations
         self.learning_rate = conf.learning_rate
         self.restore = conf.restore
+        self.markov_type = conf.markov_type
 
         self.test_iterations = conf.test_iterations
 

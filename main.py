@@ -14,7 +14,7 @@ if __name__ == "__main__":
     parser.add_argument('--test', action='store_true', help='run unit tests instead of training model')
     parser.add_argument('--restore', action='store_true', help='restore from checkpoint (must exist)')
     parser.add_argument('--samples', action='store_true', help='generate samples from trained model')
-    parser.add_argument('--model', type=str, choices=['pixelcnn', 'denoising', 'noncausal', 'evaluate'], required=True)
+    parser.add_argument('--model', type=str, choices=['pixelcnn', 'denoising', 'noncausal', 'evaluate', 'graph'], required=True)
     parser.add_argument('--layers', type=int, default=15, help='number of convolutional layers')
     parser.add_argument('--features', type=int, default=16, help='number of convolutional filters per layer')
     parser.add_argument('--end_features', type=int, default=64, help='number of features in the final fully-connected layer') 
@@ -28,11 +28,12 @@ if __name__ == "__main__":
     parser.add_argument('--max_noise_prop', type=float, default=0.95, help='Maximum proportion of pixels to replace with noise for training')
     #parser.add_argument('--train_iterations', type=int, default=2, help='How many times to apply the noncausal model to the inputs, backpropagating errors each time')
     parser.add_argument('--test_iterations', type=int, default=20, help='When generating samples, how many times to apply the noncausal and denoising models to the inputs')
+    parser.add_argument('--markov_type', type=str, default='renoise', choices=['only_denoise', 'renoise', 'renoise_per_two'])
     conf = parser.parse_args()
     
     # for quick test use python .\main.py --layers 3 --features 5 --end_features 10 --iterations 101 --batch_size 6 --model pixelcnn
     
-    if conf.model == 'evaluate':
+    if conf.model == 'graph':
         data = Dataset(conf)
         test_data = data.get_plain_test_values()
         with tf.Session() as sess:
@@ -42,9 +43,26 @@ if __name__ == "__main__":
                 samples.append(X)
             X = np.concatenate(samples)
             print(X.shape)
-        X_pixelcnn = PixelCNN(conf, data, False).get_test_samples()
+        X_noncausal_graph = NonCausal(conf, data).get_test_samples_graph()
+        tf.reset_default_graph()
+        get_metric(X, X_noncausal_graph)
+        tf.reset_default_graph()
+    elif conf.model == 'evaluate':
+        data = Dataset(conf)
+        test_data = data.get_plain_test_values()
+        with tf.Session() as sess:
+            samples = []
+            for _ in range(data.total_test_batches):
+                X, _ = sess.run(test_data)
+                samples.append(X)
+            X = np.concatenate(samples)
+            print(X.shape)
         X_denoising = PixelCNN(conf, data, True).get_test_samples()
+        tf.reset_default_graph()
         X_noncausal = NonCausal(conf, data).get_test_samples()
+        tf.reset_default_graph()
+        X_pixelcnn = PixelCNN(conf, data, False).get_test_samples()
+        tf.reset_default_graph()
         get_metric(X, [X_pixelcnn,X_denoising,X_noncausal])
     else:
         data = Dataset(conf)
