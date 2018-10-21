@@ -132,11 +132,11 @@ class PixelCNN:
 
             
         
-    def generate_one_group_of_samples(self, sess, filename, X_corrupted, X_true=None, horz_samples=100):
+    def generate_one_group_of_samples(self, sess, filename, X_corrupted, X_true=None, horz_samples=10):
         from data.dataset import noise
         print('Generating samples for', filename)
         X_corrupted = X_corrupted[:horz_samples,:,:,:]
-        predictions = [X_true] if X_true is not None else []
+        predictions = [X_true[:horz_samples,:,:,:]] if X_true is not None else []
         predictions.append(X_corrupted)
         
         start = time.perf_counter()

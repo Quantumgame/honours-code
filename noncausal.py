@@ -104,30 +104,69 @@ class NonCausal:
         print(time.perf_counter() - start)
         return samples
         
-    def generate_one_group_of_samples(self, sess, filename, X_corrupted, X_true=None, horz_samples=100):
+    def update_clamp(self, data, newdata, filename):
+        if filename == 'topgap':
+            data = data.copy()
+            data[:,:data.shape[1]//2,:,:] = newdata[:,:data.shape[1]//2,:,:]
+            return data
+        elif filename == 'bottomgap':
+            data = data.copy()
+            data[:,data.shape[1]//2:,:,:] = newdata[:,data.shape[1]//2:,:,:]
+            return data
+        else:
+            return newdata
+        
+    def generate_one_group_of_samples(self, sess, filename, X_corrupted, X_true=None, horz_samples=10):
         from data.dataset import noise
         print('Generating samples for', filename)
         X_corrupted = X_corrupted[:horz_samples,:,:,:]
-        predictions = [X_true] if X_true is not None else []
+        predictions = [X_true[:horz_samples,:,:,:]] if X_true is not None else []
         predictions.append(X_corrupted)
         
         start = time.perf_counter()
-        for i in range(self.test_iterations):
-            X_corrupted = sess.run(self.predictions, feed_dict={self.X_in:X_corrupted})
+        for i in range(self.test_iterations // 2 if filename == 'denoise' else self.test_iterations):
+            X_corrupted = self.update_clamp(X_corrupted, sess.run(self.predictions, feed_dict={self.X_in:X_corrupted}), filename)
             if self.markov_type == 'renoise_per_two':
-                X_corrupted = sess.run(self.predictions, feed_dict={self.X_in:X_corrupted})
+                X_corrupted = self.update_clamp(X_corrupted, sess.run(self.predictions, feed_dict={self.X_in:X_corrupted}), filename)
             predictions.append(X_corrupted)
             if self.markov_type != 'only_denoise':
-                noise_prop = (self.test_iterations - i - 1) / self.test_iterations
-                X_corrupted = np.array([noise(arr, noise_prop, noise_prop)[0] for arr in X_corrupted])
+                if filename == 'denoise':
+                    noise_prop = ((self.test_iterations//2 - i - 1) / self.test_iterations)
+                else:
+                    noise_prop = (self.test_iterations - i - 1) / self.test_iterations
+                X_corrupted = self.update_clamp(X_corrupted, np.array([noise(arr, noise_prop, noise_prop)[0] for arr in X_corrupted]), filename)
         print(time.perf_counter() - start)
         
         predictions = tuple(p.reshape((horz_samples, 1, self.height, self.width)) for p in predictions)
         images = np.concatenate(predictions, axis=1)
         images = images.transpose(1, 2, 0, 3)
-        images = images.reshape((self.height * (self.test_iterations + 1 + (1 if X_true is not None else 0)), self.width * horz_samples))
+        images = images.reshape((self.height * ((self.test_iterations//2 if filename == 'denoise' else self.test_iterations) + 1 + (1 if X_true is not None else 0)), self.width * horz_samples))
         
         filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M_noncausal_' + filename)+".png"
+        Image.fromarray((images*255).astype(np.int32)).convert('RGB').save(filename)
+        
+    def generate_grid_of_samples(self, sess, X_corrupted):
+        from data.dataset import noise
+        print('Generating samples for grid')
+        horz_samples = 10
+        vert_samples = 10
+        X_corrupted = X_corrupted[:horz_samples*vert_samples,:,:,:]
+
+        start = time.perf_counter()
+        for i in range(self.test_iterations):
+            X_corrupted = sess.run(self.predictions, feed_dict={self.X_in:X_corrupted})
+            if self.markov_type == 'renoise_per_two':
+                X_corrupted = sess.run(self.predictions, feed_dict={self.X_in:X_corrupted})
+            if self.markov_type != 'only_denoise':
+                noise_prop = (self.test_iterations - i - 1) / self.test_iterations
+                X_corrupted = np.array([noise(arr, noise_prop, noise_prop)[0] for arr in X_corrupted])
+        print(time.perf_counter() - start)
+
+        images = X_corrupted.reshape((vert_samples, horz_samples, self.height, self.width))
+        images = images.transpose(0, 2, 1, 3)
+        images = images.reshape((self.height * vert_samples, self.width * horz_samples))
+
+        filename = datetime.now().strftime('samples/%Y_%m_%d_%H_%M_noncausal_grid')+".png"
         Image.fromarray((images*255).astype(np.int32)).convert('RGB').save(filename)
         
     def generate_samples(self, sess):
@@ -140,8 +179,11 @@ class NonCausal:
         #X_corrupted, X_true, _ = sess.run(self.data.get_bottomgap_values())
         #images = self.generate_one_group_of_samples(sess, 'bottomgap', X_corrupted, X_true)
         
+        #X_corrupted = sess.run(self.data.get_noise_values())
+        #images = self.generate_one_group_of_samples(sess, 'purenoise', X_corrupted)
+        
         X_corrupted = sess.run(self.data.get_noise_values())
-        images = self.generate_one_group_of_samples(sess, 'purenoise', X_corrupted)
+        images = self.generate_grid_of_samples(sess, X_corrupted)
         
         
     def samples(self):
